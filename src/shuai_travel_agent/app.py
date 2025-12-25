@@ -1,6 +1,13 @@
 """
-FastAPI Web服务
+FastAPI Web服务模块
 提供HTTP API接口和静态页面服务
+
+核心功能：
+1. 多会话管理 - 支持多个并发用户会话
+2. 聊天接口 - 支持非流式和流式（SSE）两种模式
+3. 会话管理 - 创建、查询、清空会话
+4. 健康检查 - 系统健康状态检查
+5. 城市和景点查询 - 旅游知识库查询接口
 """
 
 from fastapi import FastAPI, HTTPException
@@ -16,33 +23,41 @@ from datetime import datetime
 
 from .agent import TravelAgent
 
-# 创建FastAPI应用
-app = FastAPI(title="旅游助手API", description="基于单智能体的旅游推荐系统", version="1.0.0")
+# 创建FastAPI应用实例
+app = FastAPI(
+    title="旅游助手API",
+    description="基于单智能体的旅游推荐系统",
+    version="1.0.0"
+)
 
-# 多会话管理：存储每个会话的Agent实例
+# 全局会话存储：key为session_id，value为会话数据（Agent实例、创建时间、最后活动时间、消息数）
 sessions: Dict[str, Dict[str, Any]] = {}
 
-# 会话超时时间（秒），默认24小时
+# 会话超时时间（秒），默认24小时 = 86400秒
 SESSION_TIMEOUT = 86400
 
-# 请求模型
+# ============ 数据模型定义 ============
+
 class ChatRequest(BaseModel):
-    message: str
-    session_id: Optional[str] = None
+    """聊天请求模型"""
+    message: str  # 用户消息内容
+    session_id: Optional[str] = None  # 可选的会话ID，为None时创建新会话
 
 class ChatResponse(BaseModel):
-    success: bool
-    response: str
-    intent: Optional[str] = None
-    data: Optional[Dict[str, Any]] = None
-    error: Optional[str] = None
-    session_id: Optional[str] = None
+    """聊天响应模型"""
+    success: bool  # 处理是否成功
+    response: str  # 响应文本
+    intent: Optional[str] = None  # 识别到的用户意图
+    data: Optional[Dict[str, Any]] = None  # 结构化数据（如推荐列表、路线规划等）
+    error: Optional[str] = None  # 错误信息
+    session_id: Optional[str] = None  # 本次请求的会话ID
 
 class SessionInfo(BaseModel):
-    session_id: str
-    created_at: str
-    last_active: str
-    message_count: int
+    """会话信息模型"""
+    session_id: str  # 会话唯一标识
+    created_at: str  # 创建时间
+    last_active: str  # 最后活动时间
+    message_count: int  # 消息数量
 
 # 会话管理辅助函数
 def get_or_create_session(session_id: Optional[str] = None) -> tuple[str, TravelAgent]:
@@ -202,7 +217,15 @@ async def chat_stream(request: ChatRequest):
 
 @app.get("/api/history")
 async def get_history(session_id: Optional[str] = None):
-    """获取对话历史"""
+    """
+    获取指定会话的对话历史
+    
+    Args:
+        session_id: 会话ID
+        
+    Returns:
+        对话历史列表
+    """
     try:
         if not session_id or session_id not in sessions:
             return {
@@ -210,6 +233,7 @@ async def get_history(session_id: Optional[str] = None):
                 "error": "会话不存在"
             }
         
+        # 从会话中获取Agent实例
         agent = sessions[session_id]['agent']
         history = agent.get_conversation_history()
         return {
@@ -221,9 +245,16 @@ async def get_history(session_id: Optional[str] = None):
 
 @app.post("/api/session/new")
 async def create_new_session():
-    """创建新会话"""
+    """
+    创建新会话
+    
+    Returns:
+        新会话的ID和创建信息
+    """
     try:
+        # 生成唯一会话ID
         session_id = str(uuid.uuid4())
+        # 初始化会话数据：Agent实例、创建时间、最后活动时间、消息计数
         sessions[session_id] = {
             'agent': TravelAgent(),
             'created_at': datetime.now().isoformat(),
@@ -240,11 +271,17 @@ async def create_new_session():
 
 @app.get("/api/sessions")
 async def list_sessions():
-    """获取所有会话列表"""
+    """
+    获取所有会话列表（按最后活动时间排序）
+    
+    Returns:
+        会话列表及总数
+    """
     try:
-        # 清理过期会话
+        # 清理过期会话（超过24小时未活动的会话）
         clean_expired_sessions()
         
+        # 构建会话信息列表
         session_list = []
         for sid, session_data in sessions.items():
             session_list.append({
@@ -254,7 +291,7 @@ async def list_sessions():
                 "message_count": session_data['message_count']
             })
         
-        # 按最后活动时间排序
+        # 按最后活动时间从新到旧排序
         session_list.sort(key=lambda x: x['last_active'], reverse=True)
         
         return {
@@ -267,7 +304,15 @@ async def list_sessions():
 
 @app.delete("/api/session/{session_id}")
 async def delete_session(session_id: str):
-    """删除指定会话"""
+    """
+    删除指定会话
+    
+    Args:
+        session_id: 要删除的会话ID
+        
+    Returns:
+        删除结果
+    """
     try:
         if session_id in sessions:
             del sessions[session_id]
@@ -284,7 +329,15 @@ async def delete_session(session_id: str):
 
 @app.post("/api/clear")
 async def clear_conversation(session_id: Optional[str] = None):
-    """清空对话历史"""
+    """
+    清空指定会话的对话历史
+    
+    Args:
+        session_id: 会话ID
+        
+    Returns:
+        清空结果
+    """
     try:
         if not session_id or session_id not in sessions:
             return {
@@ -292,8 +345,10 @@ async def clear_conversation(session_id: Optional[str] = None):
                 "error": "会话不存在"
             }
         
+        # 获取Agent实例并清空对话
         agent = sessions[session_id]['agent']
         agent.clear_conversation()
+        # 重置消息计数
         sessions[session_id]['message_count'] = 0
         
         return {
@@ -305,9 +360,14 @@ async def clear_conversation(session_id: Optional[str] = None):
 
 @app.get("/api/cities")
 async def get_cities():
-    """获取所有城市列表"""
+    """
+    获取系统支持的所有城市列表
+    
+    Returns:
+        城市列表
+    """
     try:
-        # 创建临时agent获取配置
+        # 创建临时Agent实例获取配置管理器中的城市数据
         temp_agent = TravelAgent()
         cities = temp_agent.config_manager.get_all_cities()
         return {
@@ -319,9 +379,17 @@ async def get_cities():
 
 @app.get("/api/city/{city_name}")
 async def get_city_info(city_name: str):
-    """获取城市详细信息"""
+    """
+    获取指定城市的详细信息（包括景点、预算、推荐天数等）
+    
+    Args:
+        city_name: 城市名称
+        
+    Returns:
+        城市详细信息
+    """
     try:
-        # 创建临时agent获取配置
+        # 创建临时Agent实例获取城市信息
         temp_agent = TravelAgent()
         city_info = temp_agent.config_manager.get_city_info(city_name)
         if city_info:
@@ -339,31 +407,47 @@ async def get_city_info(city_name: str):
 
 @app.get("/api/health")
 async def health_check():
-    """健康检查"""
+    """
+    系统健康检查接口
+    
+    Returns:
+        系统状态和版本信息
+    """
     return {
         "status": "healthy",
         "agent": "TravelAssistantAgent",
         "version": "1.0.0"
     }
 
-# 启动函数
+# ============ 启动函数 ============
+
 def start_server(host: str = "0.0.0.0", port: int = 8000, reload: bool = False):
     """
-    启动Web服务器
+    启动FastAPI Web服务器
     
     Args:
-        host: 主机地址
-        port: 端口号
-        reload: 是否启用热重载
+        host: 绑定的主机地址（默认0.0.0.0表示所有网卡）
+        port: 监听端口（默认8000）
+        reload: 是否启用热重载（开发模式）
     """
+    # 使用uvicorn.run启动服务器
+    # 参数说明：
+    #  - "shuai_travel_agent.app:app" - 指定应用位置（模块:实例）
+    #  - host - 绑定地址
+    #  - port - 监听端口
+    #  - reload - 代码变更时自动重启（仅开发环境）
     uvicorn.run("shuai_travel_agent.app:app", host=host, port=port, reload=reload)
 
 if __name__ == "__main__":
-    # 从配置读取Web服务参数
+    # 从配置文件读取Web服务参数
     import os
+    # 切换到项目根目录，确保相对路径正确
     os.chdir(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    # 从config.json加载配置
     temp_agent = TravelAgent(config_path=os.path.join('config', 'config.json'))
+    # 获取web配置部分
     web_config = temp_agent.config_manager.get_config('web', {})
+    # 启动服务器，使用配置中的参数
     start_server(
         host=web_config.get('host', '0.0.0.0'),
         port=web_config.get('port', 8000),
