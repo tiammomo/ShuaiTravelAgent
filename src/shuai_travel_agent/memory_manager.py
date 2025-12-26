@@ -211,11 +211,155 @@ class MemoryManager:
         """
         return self.session_state.get(key, default)
     
-    def clear_conversation(self) -> None:
-        """清空当前会话的对话历史"""
+    def clear_conversation(self, archive: bool = True) -> None:
+        """
+        清空当前会话的对话历史
+
+        Args:
+            archive: 是否在清空前自动归档到历史记录（默认True）
+        """
+        # 自动归档当前会话到长期记忆（被动触发，非定时）
+        if archive:
+            self._archive_session()
+
         self.conversation_history.clear()
         self.session_state['session_id'] = f"session_{int(time.time())}"
         self.session_state['start_time'] = datetime.now().isoformat()
+
+    def _archive_session(self) -> None:
+        """
+        将当前会话归档到长期记忆
+
+        设计原则：
+        - 仅在会话结束时被动触发（非定时）
+        - 一次性生成完整归档
+        - 保持会话记录完整性
+        """
+        # 获取当前会话的所有信息
+        messages = self.get_conversation_history()
+        session_state = self.session_state.copy()
+        user_preference = self.user_preference.to_dict()
+
+        # 生成会话摘要
+        summary = self._generate_session_summary(messages, session_state)
+
+        # 构建归档记录
+        archive_record = {
+            'session_id': session_state.get('session_id'),
+            'start_time': session_state.get('start_time'),
+            'end_time': datetime.now().isoformat(),
+            'message_count': len(messages),
+            'summary': summary,
+            'user_preference': user_preference,
+            'session_state': {
+                'last_recommended_cities': session_state.get('last_recommended_cities', []),
+                'last_recommended_attractions': session_state.get('last_recommended_attractions', []),
+                'current_plan': session_state.get('current_plan')
+            },
+            'messages': messages  # 保留完整消息历史
+        }
+
+        # 添加到长期记忆
+        self.long_term_memory.append(archive_record)
+
+        # 限制长期记忆数量（保持内存可控）
+        while len(self.long_term_memory) > self.max_long_term_memory:
+            self.long_term_memory.pop(0)
+
+    def _generate_session_summary(self, messages: List[Dict], session_state: Dict) -> str:
+        """
+        生成会话摘要
+
+        Args:
+            messages: 对话消息列表
+            session_state: 会话状态
+
+        Returns:
+            会话摘要文本
+        """
+        summary_parts = []
+
+        # 统计信息
+        user_messages = [m for m in messages if m.get('role') == 'user']
+        if user_messages:
+            summary_parts.append(f"用户消息数: {len(user_messages)}")
+
+        # 推荐的城市
+        recommended_cities = session_state.get('last_recommended_cities', [])
+        if recommended_cities:
+            summary_parts.append(f"推荐城市: {', '.join(recommended_cities[:5])}")
+
+        # 当前规划
+        current_plan = session_state.get('current_plan')
+        if current_plan:
+            route_plan = current_plan.get('route_plan', [])
+            if route_plan:
+                cities = set()
+                for day in route_plan:
+                    cities.update(day.get('attractions', []))
+                if cities:
+                    summary_parts.append(f"已规划路线")
+
+        return " | ".join(summary_parts) if summary_parts else "一般对话"
+
+    def archive_current_session(self) -> Dict[str, Any]:
+        """
+        手动触发归档当前会话
+
+        Returns:
+            归档的会话信息
+        """
+        self._archive_session()
+        return self.long_term_memory[-1] if self.long_term_memory else {}
+
+    def get_archived_sessions(self, limit: int = 50) -> List[Dict[str, Any]]:
+        """
+        获取归档的历史会话列表
+
+        Args:
+            limit: 返回数量限制
+
+        Returns:
+            归档会话列表（摘要形式，不含完整消息）
+        """
+        archives = []
+        for record in reversed(self.long_term_memory[-limit:]):
+            archives.append({
+                'session_id': record['session_id'],
+                'start_time': record['start_time'],
+                'end_time': record['end_time'],
+                'message_count': record['message_count'],
+                'summary': record['summary']
+            })
+        return archives
+
+    def get_archive_detail(self, session_id: str) -> Optional[Dict[str, Any]]:
+        """
+        获取指定归档会话的详细信息
+
+        Args:
+            session_id: 会话ID
+
+        Returns:
+            归档详情或None
+        """
+        for record in self.long_term_memory:
+            if record['session_id'] == session_id:
+                return record
+        return None
+
+    def get_long_term_memory(self) -> List[Dict[str, Any]]:
+        """获取完整长期记忆（用于持久化）"""
+        return self.long_term_memory
+
+    def set_long_term_memory(self, memory: List[Dict[str, Any]]) -> None:
+        """
+        加载长期记忆（用于持久化恢复）
+
+        Args:
+            memory: 长期记忆数据
+        """
+        self.long_term_memory = memory[-self.max_long_term_memory:]
     
     def get_user_preference(self) -> Dict[str, Any]:
         """获取用户偏好"""

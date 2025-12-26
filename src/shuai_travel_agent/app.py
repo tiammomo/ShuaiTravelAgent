@@ -234,10 +234,11 @@ async def chat_stream(request: ChatRequest):
             
             # 添加助手回复到记忆
             agent.memory_manager.add_message('assistant', full_response)
-            
-            # 更新消息计数
+
+            # 更新消息计数和最后活动时间
             sessions[session_id]['message_count'] += 1
-            
+            sessions[session_id]['last_active'] = datetime.now().isoformat()
+
             # 发送结束信号
             yield f"data: {json.dumps({'done': True}, ensure_ascii=False)}\n\n"
         

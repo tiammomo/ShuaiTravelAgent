@@ -42,6 +42,7 @@ const ChatArea: React.FC = () => {
     setIsStreaming,
     stopStreaming,
     setStopStreaming,
+    refreshSessions,
   } = useAppContext();
 
   const [inputValue, setInputValue] = useState('');
@@ -149,6 +150,8 @@ const ChatArea: React.FC = () => {
           addMessage(finalMessage);
           setStreamingMessage('');
           setIsStreaming(false);
+          // 自动刷新会话列表（后台静默执行，无需用户操作）
+          refreshSessions();
         },
         onStop: () => stopStreaming,
       }

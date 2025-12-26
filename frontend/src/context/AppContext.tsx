@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { Message, AppConfig, ModelInfo } from '../types';
+import { Message, AppConfig, ModelInfo, SessionInfo } from '../types';
 import { apiService } from '../services/api';
 
 interface AppState {
@@ -17,6 +17,8 @@ interface AppState {
   currentSessionId: string | null;
   setCurrentSessionId: (id: string | null) => void;
   switchSession: (id: string | null) => void;  // 切换会话，保留消息
+  refreshSessions: () => Promise<void>;  // 刷新会话列表
+  sessions: SessionInfo[];  // 会话列表
 
   // 消息
   messages: Message[];
@@ -52,6 +54,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const [isStreaming, setIsStreaming] = useState(false);
   const [stopStreaming, setStopStreaming] = useState(false);
+  const [sessions, setSessions] = useState<SessionInfo[]>([]);
+
+  // 加载会话列表
+  const loadSessions = async () => {
+    try {
+      const data = await apiService.getSessions();
+      // 过滤掉没有消息的会话（首次发送前不显示）
+      const activeSessions = data.sessions.filter(s => s.message_count > 0);
+      setSessions(activeSessions);
+    } catch (error) {
+      console.error('加载会话失败:', error);
+    }
+  };
 
   // 加载可用模型列表
   useEffect(() => {
@@ -80,6 +95,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     };
 
     loadModels();
+  }, []);
+
+  // 初始加载会话列表
+  useEffect(() => {
+    loadSessions();
   }, []);
 
   // 设置当前模型
@@ -139,6 +159,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // 设置当前会话（不切换消息）
   const setCurrentSessionId = (id: string | null) => {
     setCurrentSessionIdState(id);
+  };
+
+  // 刷新会话列表（自动调用，无需手动操作）
+  const refreshSessions = async () => {
+    try {
+      const data = await apiService.getSessions();
+      // 过滤掉没有消息的会话
+      const activeSessions = data.sessions.filter(s => s.message_count > 0);
+      setSessions(activeSessions);
+    } catch (error) {
+      // 静默失败，不影响用户操作
+    }
   };
 
   // 切换会话（保留消息）
@@ -203,6 +235,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     currentSessionId,
     setCurrentSessionId,
     switchSession,
+    refreshSessions,
+    sessions,
     messages,
     addMessage,
     clearMessages,

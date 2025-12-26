@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Button, Input, Space, List, Card, message as antMessage, Modal, Select, Spin } from 'antd';
 import {
   PlusOutlined,
@@ -10,7 +10,6 @@ import {
 } from '@ant-design/icons';
 import { useAppContext } from '../context/AppContext';
 import { apiService } from '../services/api';
-import { SessionInfo } from '../types';
 
 const { Option } = Select;
 
@@ -27,33 +26,15 @@ const Sidebar: React.FC = () => {
     currentModelId,
     setCurrentModelId,
     loadingModels,
+    sessions,
+    refreshSessions,
   } = useAppContext();
 
   const [apiBase, setApiBase] = useState(config.apiBase);
-  const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [loading, setLoading] = useState(false);
   const [switchingModel, setSwitchingModel] = useState(false);
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
-
-  // 加载会话列表
-  const loadSessions = async () => {
-    try {
-      const data = await apiService.getSessions();
-      // 过滤掉没有消息的会话（首次发送前不显示）
-      const activeSessions = data.sessions.filter(s => s.message_count > 0);
-      setSessions(activeSessions);
-    } catch (error) {
-      console.error('加载会话失败:', error);
-    }
-  };
-
-  useEffect(() => {
-    loadSessions();
-    // 定时刷新会话列表，以便显示新添加的会话
-    const interval = setInterval(loadSessions, 3000);  // 每3秒刷新一次
-    return () => clearInterval(interval);
-  }, []);
 
   // 创建新会话
   const handleCreateSession = async () => {
@@ -62,7 +43,7 @@ const Sidebar: React.FC = () => {
       const data = await apiService.createSession();
       // 使用switchSession切换到新会话，保留原会话消息
       switchSession(data.session_id);
-      await loadSessions();
+      await refreshSessions();
       antMessage.success('新会话已创建');
     } catch (error) {
       antMessage.error('创建会话失败');
@@ -79,7 +60,7 @@ const Sidebar: React.FC = () => {
         // 如果删除的是当前会话，切换到空会话
         switchSession(null);
       }
-      await loadSessions();
+      await refreshSessions();
       antMessage.success('会话已删除');
     } catch (error) {
       antMessage.error('删除失败');
@@ -109,7 +90,7 @@ const Sidebar: React.FC = () => {
 
     try {
       await apiService.updateSessionName(editingSessionId, editingName.trim());
-      await loadSessions();
+      await refreshSessions();
       setEditingSessionId(null);
       setEditingName('');
       antMessage.success('会话名称已更新');

@@ -15,6 +15,7 @@ Streamlit前端界面 - 小帅旅游助手
 import streamlit as st
 import requests
 import json
+import time
 from datetime import datetime
 
 # 页面配置（必须在应用开始）
@@ -122,6 +123,11 @@ if 'current_session_id' not in st.session_state:
 if 'session_page' not in st.session_state:
     st.session_state.session_page = 0
 
+# 会话列表缓存（避免频繁调用API）
+if 'sessions_cache' not in st.session_state:
+    st.session_state.sessions_cache = []
+    st.session_state.sessions_cache_time = None
+
 # 流式输出控制状态
 if 'is_streaming' not in st.session_state:
     st.session_state.is_streaming = False
@@ -226,75 +232,101 @@ with st.sidebar:
     def session_list_section():
         """
         会话列表区域（局部刷新）
-        
+
         功能：
         - 显示历史会话列表
         - 支持分页浏览
         - 支持切换和删除会话
-        
-        注：@st.fragment使此区域独立刷新，分页操作不影响其他区域
+        - 使用缓存避免频繁调用API
+
+        设计原则：
+        - 被动刷新：只在用户操作后刷新
+        - 缓存机制：减少不必要的API调用
+        - 无定时刷新：不设置任何定时器
         """
         st.subheader("📊 历史会话")
-        
-        try:
-            response = requests.get(f"{st.session_state.api_base}/api/sessions")
-            if response.status_code == 200:
-                data = response.json()
-                sessions_list = data.get('sessions', [])
-                
-                if sessions_list:
-                    # 分页设置
-                    items_per_page = 10
-                    total_pages = (len(sessions_list) + items_per_page - 1) // items_per_page
-                    current_page = st.session_state.session_page
-                    
-                    # 确保页码合法
-                    if current_page >= total_pages:
-                        current_page = total_pages - 1
-                        st.session_state.session_page = current_page
-                    
-                    # 分页按钮（仅在多页时显示）
-                    if total_pages > 1:
-                        col_prev, col_info, col_next = st.columns([1, 2, 1])
-                        with col_prev:
-                            if st.button("◀ 上页", disabled=(current_page == 0), use_container_width=True):
-                                st.session_state.session_page = max(0, current_page - 1)
-                                st.rerun()
-                        with col_info:
-                            st.caption(f"📊 第 {current_page + 1}/{total_pages} 页 · 共 {len(sessions_list)} 个会话")
-                        with col_next:
-                            if st.button("下页 ▶", disabled=(current_page >= total_pages - 1), use_container_width=True):
-                                st.session_state.session_page = min(total_pages - 1, current_page + 1)
-                                st.rerun()
-                        st.markdown("---")
-                    
-                    # 显示当前页会话
-                    start_idx = current_page * items_per_page
-                    end_idx = min(start_idx + items_per_page, len(sessions_list))
-                    
-                    for session in sessions_list[start_idx:end_idx]:
-                        session_id = session['session_id']
-                        msg_count = session['message_count']
-                        last_active = session['last_active'][:19]
-                        
-                        is_current = session_id == st.session_state.current_session_id
-                        
-                        col_a, col_b = st.columns([3, 1])
-                        with col_a:
-                            button_label = f"{'✅' if is_current else '📌'} {session_id[:8]}... ({msg_count}条)"
-                            if st.button(button_label, key=f"switch_{session_id}", disabled=is_current, use_container_width=True):
-                                st.session_state.trigger_switch = session_id
-                        
-                        with col_b:
-                            if st.button("🗑️", key=f"del_{session_id}", use_container_width=True):
-                                st.session_state.trigger_delete = session_id
-                        
-                        st.caption(f"🕒 {last_active}")
-                        st.markdown("---")
-                else:
-                    st.info("📂 暂无历史会话")
-        except Exception as e:
-            st.error(f"加载失败: {str(e)}")
+
+        # 刷新按钮（手动触发）
+        col_refresh, col_clear = st.columns([3, 1])
+        with col_refresh:
+            if st.button("🔄 刷新列表", use_container_width=True):
+                st.session_state.sessions_cache = []
+                st.session_state.sessions_cache_time = None
+                st.rerun()
+
+        # 尝试从缓存获取
+        cache_valid = (
+            st.session_state.sessions_cache and
+            st.session_state.sessions_cache_time and
+            (time.time() - st.session_state.sessions_cache_time) < 300  # 缓存5分钟
+        )
+
+        if not cache_valid:
+            try:
+                response = requests.get(f"{st.session_state.api_base}/api/sessions", timeout=5)
+                if response.status_code == 200:
+                    data = response.json()
+                    st.session_state.sessions_cache = data.get('sessions', [])
+                    st.session_state.sessions_cache_time = time.time()
+            except Exception as e:
+                st.error(f"加载失败: {str(e)}")
+                return
+
+        sessions_list = st.session_state.sessions_cache
+
+        if sessions_list:
+            # 分页设置
+            items_per_page = 10
+            total_pages = (len(sessions_list) + items_per_page - 1) // items_per_page
+            current_page = st.session_state.session_page
+
+            # 确保页码合法
+            if current_page >= total_pages:
+                current_page = total_pages - 1
+                st.session_state.session_page = current_page
+
+            # 分页按钮（仅在多页时显示）
+            if total_pages > 1:
+                col_prev, col_info, col_next = st.columns([1, 2, 1])
+                with col_prev:
+                    if st.button("◀ 上页", disabled=(current_page == 0), use_container_width=True):
+                        st.session_state.session_page = max(0, current_page - 1)
+                        st.rerun()
+                with col_info:
+                    st.caption(f"📊 第 {current_page + 1}/{total_pages} 页 · 共 {len(sessions_list)} 个会话")
+                with col_next:
+                    if st.button("下页 ▶", disabled=(current_page >= total_pages - 1), use_container_width=True):
+                        st.session_state.session_page = min(total_pages - 1, current_page + 1)
+                        st.rerun()
+                st.markdown("---")
+
+            # 显示当前页会话
+            start_idx = current_page * items_per_page
+            end_idx = min(start_idx + items_per_page, len(sessions_list))
+
+            for session in sessions_list[start_idx:end_idx]:
+                session_id = session['session_id']
+                msg_count = session['message_count']
+                last_active = session['last_active'][:19]
+
+                is_current = session_id == st.session_state.current_session_id
+
+                col_a, col_b = st.columns([3, 1])
+                with col_a:
+                    button_label = f"{'✅' if is_current else '📌'} {session_id[:8]}... ({msg_count}条)"
+                    if st.button(button_label, key=f"switch_{session_id}", disabled=is_current, use_container_width=True):
+                        st.session_state.trigger_switch = session_id
+                        st.session_state.sessions_cache = []  # 清除缓存，刷新列表
+
+                with col_b:
+                    if st.button("🗑️", key=f"del_{session_id}", use_container_width=True):
+                        st.session_state.trigger_delete = session_id
+                        st.session_state.sessions_cache = []  # 清除缓存，刷新列表
+
+                st.caption(f"🕒 {last_active}")
+                st.markdown("---")
+        else:
+            st.info("📂 暂无历史会话")
     
     session_list_section()
     st.markdown("---")
@@ -387,6 +419,9 @@ if 'trigger_new_session' in st.session_state and st.session_state.trigger_new_se
                     "timestamp": datetime.now().strftime("%H:%M")
                 }
             ]
+            # 清除会话列表缓存，确保新会话出现在列表中
+            st.session_state.sessions_cache = []
+            st.session_state.sessions_cache_time = None
             st.rerun()
     except Exception as e:
         st.error(f"创建失败: {str(e)}")
