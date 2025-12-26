@@ -260,6 +260,131 @@ class ConfigManager:
         """获取所有城市列表"""
         return list(self.travel_knowledge['cities'].keys())
     
-    def get_llm_config(self) -> Dict[str, Any]:
-        """获取LLM配置"""
+    def get_llm_config(self, model_id: Optional[str] = None) -> Dict[str, Any]:
+        """
+        获取LLM配置
+
+        Args:
+            model_id: 可选的模型ID，如果提供则返回指定模型的配置
+
+        Returns:
+            LLM配置字典
+        """
+        if model_id:
+            return self.get_model_config(model_id)
+
+        # 兼容旧代码：未提供 model_id 时检查是否有新格式配置
+        models_config = self.config.get('llm', {}).get('models', {})
+        if models_config:
+            # 新格式：使用默认模型
+            default_model_id = self.get_default_model_id()
+            return self.get_model_config(default_model_id)
+
+        # 旧格式：直接返回 llm_config
         return self.llm_config
+
+    def get_available_models(self) -> List[Dict[str, Any]]:
+        """
+        获取可用的模型列表
+
+        Returns:
+            模型列表，每个模型包含 model_id, name, provider, model 等信息
+        """
+        llm_config = self.config.get('llm', {})
+        models_config = llm_config.get('models', {})
+
+        # 兼容旧格式：如果没有 models 配置，使用旧的 llm 配置
+        if not models_config:
+            provider_type = llm_config.get('provider_type', 'openai')
+            model_name = llm_config.get('model', 'gpt-4o-mini')
+            return [{
+                'model_id': model_name,
+                'name': self._get_model_display_name(model_name, provider_type),
+                'provider': provider_type,
+                'model': model_name
+            }]
+
+        # 新格式：解析多个模型配置
+        models = []
+        for model_id, config in models_config.items():
+            provider_type = config.get('provider_type', 'openai')
+            model_name = config.get('model', model_id)
+            models.append({
+                'model_id': model_id,
+                'name': self._get_model_display_name(model_name, provider_type),
+                'provider': provider_type,
+                'model': model_name
+            })
+
+        return models
+
+    def _get_model_display_name(self, model: str, provider: str) -> str:
+        """
+        生成模型显示名称
+
+        Args:
+            model: 模型名称
+            provider: 提供商
+
+        Returns:
+            显示名称
+        """
+        provider_names = {
+            'openai': 'OpenAI',
+            'anthropic': 'Claude',
+            'google': 'Gemini',
+            'openai-compatible': 'Custom'
+        }
+
+        # 简化模型名称显示
+        if 'gpt-4' in model and 'mini' not in model:
+            return f"{provider_names.get(provider, provider)} GPT-4"
+        elif 'gpt-3.5' in model or 'gpt-4o-mini' in model or 'mini' in model:
+            return f"{provider_names.get(provider, provider)} GPT-4o Mini"
+        elif 'claude-3' in model:
+            if 'sonnet' in model:
+                return f"{provider_names.get(provider, provider)} Claude 3 Sonnet"
+            elif 'opus' in model:
+                return f"{provider_names.get(provider, provider)} Claude 3 Opus"
+            else:
+                return f"{provider_names.get(provider, provider)} Claude 3"
+        elif 'gemini' in model:
+            if 'pro' in model:
+                return f"{provider_names.get(provider, provider)} Gemini Pro"
+            elif 'flash' in model:
+                return f"{provider_names.get(provider, provider)} Gemini Flash"
+            else:
+                return f"{provider_names.get(provider, provider)} Gemini"
+        else:
+            return model
+
+    def get_model_config(self, model_id: str) -> Dict[str, Any]:
+        """
+        获取指定模型的配置
+
+        Args:
+            model_id: 模型ID
+
+        Returns:
+            模型配置字典
+        """
+        llm_config = self.config.get('llm', {})
+        models_config = llm_config.get('models', {})
+
+        # 兼容旧格式
+        if not models_config:
+            if model_id == llm_config.get('model', 'gpt-4o-mini'):
+                return llm_config
+            else:
+                raise ValueError(f"模型不存在: {model_id}")
+
+        # 新格式
+        if model_id not in models_config:
+            raise ValueError(f"模型不存在: {model_id}")
+
+        return models_config[model_id]
+
+    def get_default_model_id(self) -> str:
+        """获取默认模型ID"""
+        llm_config = self.config.get('llm', {})
+        return llm_config.get('default_model_id', 'gpt-4o-mini')

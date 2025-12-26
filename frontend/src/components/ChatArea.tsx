@@ -7,6 +7,31 @@ import MessageList from './MessageList';
 
 const { TextArea } = Input;
 
+// 自定义 Hook：动态加载动画
+const useLoadingDots = (isLoading: boolean) => {
+  const [dots, setDots] = useState('');
+
+  useEffect(() => {
+    if (!isLoading) {
+      setDots('');
+      return;
+    }
+
+    const interval = setInterval(() => {
+      setDots((prev) => {
+        if (prev === '') return '.';
+        if (prev === '.') return '..';
+        if (prev === '..') return '...';
+        return '';
+      });
+    }, 500);
+
+    return () => clearInterval(interval);
+  }, [isLoading]);
+
+  return dots;
+};
+
 const ChatArea: React.FC = () => {
   const {
     currentSessionId,
@@ -21,7 +46,12 @@ const ChatArea: React.FC = () => {
 
   const [inputValue, setInputValue] = useState('');
   const [streamingMessage, setStreamingMessage] = useState('');
+  const [waitingForResponse, setWaitingForResponse] = useState(false);
+  const [isThinking, setIsThinking] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // 使用动态加载动画
+  const loadingDots = useLoadingDots(waitingForResponse);
 
   // 自动滚动到底部
   const scrollToBottom = () => {
@@ -65,6 +95,8 @@ const ChatArea: React.FC = () => {
     setInputValue('');
     setIsStreaming(true);
     setStopStreaming(false);
+    setWaitingForResponse(true);
+    setIsThinking(true);
 
     // 如果是首次发送消息，设置会话名称
     if (isFirstMessage) {
@@ -77,8 +109,8 @@ const ChatArea: React.FC = () => {
     }
 
     // 初始化流式消息
-    setStreamingMessage('🤔 正在思考中...');
     let fullResponse = '';
+    let firstChunk = true;
 
     // 发起流式请求
     await apiService.fetchStreamChat(
@@ -88,18 +120,27 @@ const ChatArea: React.FC = () => {
       },
       {
         onChunk: (content) => {
+          if (firstChunk) {
+            setWaitingForResponse(false);
+            setIsThinking(false);
+            firstChunk = false;
+          }
           fullResponse += content;
           setStreamingMessage((prev) => {
-            if (prev === '🤔 正在思考中...') return content;
+            if (!prev) return content;
             return prev + content;
           });
         },
         onError: (error) => {
+          setWaitingForResponse(false);
+          setIsThinking(false);
           const errorMsg = `抱歉，出现错误：${error}`;
           setStreamingMessage(errorMsg);
           fullResponse = errorMsg;
         },
         onComplete: () => {
+          setWaitingForResponse(false);
+          setIsThinking(false);
           const finalMessage = {
             role: 'assistant' as const,
             content: fullResponse || streamingMessage,
@@ -115,6 +156,8 @@ const ChatArea: React.FC = () => {
 
     // 如果被停止
     if (stopStreaming) {
+      setWaitingForResponse(false);
+      setIsThinking(false);
       const finalMessage = {
         role: 'assistant' as const,
         content: fullResponse + '\n\n⚠️ 已停止生成',
@@ -135,12 +178,12 @@ const ChatArea: React.FC = () => {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '24px' }}>
       <div style={{ marginBottom: '16px' }}>
-        <h2 style={{ margin: 0 }}>🌍 小帅旅游助手</h2>
+        <h2 style={{ margin: 0 }}>小帅旅游助手</h2>
         <p style={{ margin: '4px 0 0 0', color: '#666' }}>为您提供个性化的旅游推荐和路线规划</p>
       </div>
 
       <div style={{ flex: 1, overflow: 'auto', marginBottom: '16px' }}>
-        <MessageList messages={messages} streamingMessage={streamingMessage} />
+        <MessageList messages={messages} streamingMessage={streamingMessage} loadingDots={loadingDots} isThinking={isThinking} />
         <div ref={messagesEndRef} />
       </div>
 

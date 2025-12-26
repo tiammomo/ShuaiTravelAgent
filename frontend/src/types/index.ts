@@ -10,6 +10,7 @@ export interface SessionInfo {
   message_count: number;
   last_active: string;
   name?: string;  // 会话名称（可选）
+  model_id?: string;  // 会话使用的模型ID（可选）
 }
 
 export interface AppConfig {
@@ -26,4 +27,36 @@ export interface ChatResponse {
   response?: string;
   error?: string;
   session_id?: string;
+}
+
+// 模型信息
+export interface ModelInfo {
+  model_id: string;
+  name: string;
+  provider: string;
+  model: string;
+}
+
+// 可用模型响应
+export interface AvailableModelsResponse {
+  success: boolean;
+  models: ModelInfo[];
+}
+
+// 设置模型请求
+export interface SetModelRequest {
+  model_id: string;
+}
+
+// 设置模型响应
+export interface SetModelResponse {
+  success: boolean;
+  message: string;
+  model_id: string;
+}
+
+// 获取会话模型响应
+export interface GetSessionModelResponse {
+  success: boolean;
+  model_id: string;
 }

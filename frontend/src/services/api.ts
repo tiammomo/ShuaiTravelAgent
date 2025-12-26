@@ -1,5 +1,13 @@
 import axios from 'axios';
-import { SessionInfo, ChatRequest, ChatResponse } from '../types';
+import {
+  SessionInfo,
+  ChatRequest,
+  ChatResponse,
+  AvailableModelsResponse,
+  SetModelRequest,
+  SetModelResponse,
+  GetSessionModelResponse
+} from '../types';
 
 const API_BASE = '/api';
 
@@ -49,6 +57,27 @@ class APIService {
     return response.data;
   }
 
+  // 获取可用模型列表
+  async getAvailableModels(): Promise<AvailableModelsResponse> {
+    const response = await axios.get(`${API_BASE}/models`);
+    return response.data;
+  }
+
+  // 设置会话模型
+  async setSessionModel(sessionId: string, modelId: string): Promise<SetModelResponse> {
+    const response = await axios.put(
+      `${API_BASE}/session/${sessionId}/model`,
+      { model_id: modelId } as SetModelRequest
+    );
+    return response.data;
+  }
+
+  // 获取会话当前模型
+  async getSessionModel(sessionId: string): Promise<GetSessionModelResponse> {
+    const response = await axios.get(`${API_BASE}/session/${sessionId}/model`);
+    return response.data;
+  }
+
   // SSE流式聊天（通过EventSource处理）
   createChatStream(request: ChatRequest, callbacks: {
     onChunk: (content: string) => void;
@@ -56,13 +85,13 @@ class APIService {
     onComplete: () => void;
   }): EventSource {
     const url = new URL(`${window.location.origin}${API_BASE}/chat/stream`);
-    
+
     // 使用POST请求的Body数据需要特殊处理
     // EventSource只支持GET，所以需要通过服务端配置或使用fetch
     // 这里我们使用fetch + ReadableStream替代EventSource
-    
+
     this.fetchStreamChat(request, callbacks);
-    
+
     // 返回一个空的EventSource（实际使用fetch）
     return new EventSource('');
   }
@@ -104,7 +133,7 @@ class APIService {
         }
 
         const { done, value } = await reader.read();
-        
+
         if (done) {
           callbacks.onComplete();
           break;
@@ -116,7 +145,7 @@ class APIService {
         for (const line of lines) {
           if (line.startsWith('data: ')) {
             const dataStr = line.slice(6).trim();
-            
+
             if (dataStr === '[DONE]') {
               callbacks.onComplete();
               return;
@@ -124,7 +153,7 @@ class APIService {
 
             try {
               const data = JSON.parse(dataStr);
-              
+
               if (data.chunk) {
                 callbacks.onChunk(data.chunk);
               } else if (data.error) {

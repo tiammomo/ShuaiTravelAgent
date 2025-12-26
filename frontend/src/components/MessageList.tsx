@@ -7,6 +7,8 @@ import type { Components } from 'react-markdown';
 interface Props {
   messages: Message[];
   streamingMessage?: string;
+  loadingDots?: string;
+  isThinking?: boolean;
 }
 
 // 清理文本中的多余空行和格式问题
@@ -35,7 +37,7 @@ const markdownComponents: Components = {
   ul: ({ children }) => <ul style={{ margin: '2px 0', paddingLeft: '20px' }}>{children}</ul>,
 };
 
-const MessageList: React.FC<Props> = ({ messages, streamingMessage }) => {
+const MessageList: React.FC<Props> = ({ messages, streamingMessage, loadingDots, isThinking }) => {
   return (
     <div style={{ maxWidth: '900px', margin: '0 auto', width: '100%' }}>
       {messages.map((msg, index) => (
@@ -68,7 +70,27 @@ const MessageList: React.FC<Props> = ({ messages, streamingMessage }) => {
           </Card>
         </div>
       ))}
-      
+
+      {isThinking && (
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '6px' }}>
+          <Card
+            className="chat-message assistant"
+            style={{
+              width: '100%',
+              background: '#f0f2f6',
+              color: '#262730',
+              borderRadius: '8px',
+            }}
+            bodyStyle={{ padding: '12px 16px' }}
+          >
+            <div className="chat-message-content" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span className="thinking-indicator">●{loadingDots || ''}</span>
+              <span style={{ color: '#666' }}>正在思考中...</span>
+            </div>
+          </Card>
+        </div>
+      )}
+
       {streamingMessage && (
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '6px' }}>
           <Card
@@ -86,9 +108,8 @@ const MessageList: React.FC<Props> = ({ messages, streamingMessage }) => {
                 {cleanContent(streamingMessage)}
               </ReactMarkdown>
             </div>
-            {streamingMessage !== '🤔 正在思考中...' && (
-              <span className="thinking-indicator">●</span>
-            )}
+            {/* 显示动态加载指示器 */}
+            <span className="thinking-indicator">●{loadingDots || ''}</span>
           </Card>
         </div>
       )}

@@ -1,15 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { Button, Input, Space, List, Card, message as antMessage, Modal } from 'antd';
+import { Button, Input, Space, List, Card, message as antMessage, Modal, Select, Spin } from 'antd';
 import {
   PlusOutlined,
   DeleteOutlined,
   CheckCircleOutlined,
   ApiOutlined,
   EditOutlined,
+  RobotOutlined,
 } from '@ant-design/icons';
 import { useAppContext } from '../context/AppContext';
 import { apiService } from '../services/api';
 import { SessionInfo } from '../types';
+
+const { Option } = Select;
 
 const Sidebar: React.FC = () => {
   const {
@@ -20,11 +23,16 @@ const Sidebar: React.FC = () => {
     switchSession,
     clearMessages,
     setMessages,
+    availableModels,
+    currentModelId,
+    setCurrentModelId,
+    loadingModels,
   } = useAppContext();
 
   const [apiBase, setApiBase] = useState(config.apiBase);
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [loading, setLoading] = useState(false);
+  const [switchingModel, setSwitchingModel] = useState(false);
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
 
@@ -126,7 +134,7 @@ const Sidebar: React.FC = () => {
       antMessage.warning('请先创建会话');
       return;
     }
-    
+
     try {
       await apiService.clearChat(currentSessionId);
       clearMessages();
@@ -136,10 +144,50 @@ const Sidebar: React.FC = () => {
     }
   };
 
+  // 模型切换
+  const handleModelChange = async (modelId: string) => {
+    try {
+      setSwitchingModel(true);
+      await setCurrentModelId(modelId);
+      const model = availableModels.find(m => m.model_id === modelId);
+      antMessage.success(`已切换到 ${model?.name || modelId}`);
+    } catch (error) {
+      antMessage.error('模型切换失败，请重试');
+      console.error('模型切换错误:', error);
+    } finally {
+      setSwitchingModel(false);
+    }
+  };
+
   return (
     <div style={{ padding: '24px', height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <h2 style={{ marginBottom: '24px' }}>🌍 AI旅游助手</h2>
-      
+      {/* 模型选择 */}
+      <Card title="🤖 AI模型" size="small" style={{ marginBottom: '16px' }}>
+        {loadingModels ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0' }}>
+            <RobotOutlined style={{ color: '#1890ff' }} />
+            <Spin size="small" />
+            <span style={{ fontSize: '14px', color: '#999' }}>加载中...</span>
+          </div>
+        ) : (
+          <Select
+            value={currentModelId}
+            onChange={handleModelChange}
+            style={{ width: '100%' }}
+            placeholder="选择模型"
+            suffixIcon={<RobotOutlined />}
+            loading={switchingModel}
+            disabled={availableModels.length === 0 || switchingModel}
+          >
+            {availableModels.map((model) => (
+              <Option key={model.model_id} value={model.model_id}>
+                {model.name}
+              </Option>
+            ))}
+          </Select>
+        )}
+      </Card>
+
       {/* API配置 */}
       <Card title="⚙️ 系统配置" size="small" style={{ marginBottom: '16px' }}>
         <Space direction="vertical" style={{ width: '100%' }}>

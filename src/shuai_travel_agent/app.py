@@ -74,14 +74,37 @@ class UpdateSessionNameRequest(BaseModel):
     """更新会话名称请求模型"""
     name: str  # 新的会话名称
 
+class ModelInfo(BaseModel):
+    """模型信息"""
+    model_id: str  # 模型唯一标识
+    name: str  # 显示名称
+    provider: str  # 提供商
+    model: str  # 实际模型名称
+
+class AvailableModelsResponse(BaseModel):
+    """可用模型列表响应"""
+    success: bool
+    models: List[ModelInfo]
+
+class SetSessionModelRequest(BaseModel):
+    """设置会话模型请求"""
+    model_id: str
+
+class SetSessionModelResponse(BaseModel):
+    """设置会话模型响应"""
+    success: bool
+    message: str
+    model_id: str
+
 # 会话管理辅助函数
-def get_or_create_session(session_id: Optional[str] = None) -> tuple[str, TravelAgent]:
+def get_or_create_session(session_id: Optional[str] = None, model_id: Optional[str] = None) -> tuple[str, TravelAgent]:
     """
     获取或创建会话
-    
+
     Args:
         session_id: 会话ID，如果为None则创建新会话
-        
+        model_id: 模型ID，创建新会话时使用
+
     Returns:
         (session_id, agent)
     """
@@ -89,16 +112,17 @@ def get_or_create_session(session_id: Optional[str] = None) -> tuple[str, Travel
     if not session_id or session_id not in sessions:
         session_id = str(uuid.uuid4())
         sessions[session_id] = {
-            'agent': TravelAgent(),
+            'agent': TravelAgent(model_config=model_id),
             'created_at': datetime.now().isoformat(),
             'last_active': datetime.now().isoformat(),
             'message_count': 0,
-            'name': None
+            'name': None,
+            'model_id': model_id or 'default'
         }
     else:
         # 更新最后活动时间
         sessions[session_id]['last_active'] = datetime.now().isoformat()
-    
+
     return session_id, sessions[session_id]['agent']
 
 def clean_expired_sessions():
@@ -454,7 +478,7 @@ async def get_city_info(city_name: str):
 async def health_check():
     """
     系统健康检查接口
-    
+
     Returns:
         系统状态和版本信息
     """
@@ -463,6 +487,99 @@ async def health_check():
         "agent": "TravelAssistantAgent",
         "version": "1.0.0"
     }
+
+@app.get("/api/models", response_model=AvailableModelsResponse)
+async def get_available_models():
+    """
+    获取可用的模型列表
+
+    Returns:
+        可用模型列表
+    """
+    try:
+        # 创建临时 Agent 获取配置
+        temp_agent = TravelAgent()
+        models = temp_agent.config_manager.get_available_models()
+
+        return AvailableModelsResponse(
+            success=True,
+            models=[ModelInfo(**m) for m in models]
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/api/session/{session_id}/model", response_model=SetSessionModelResponse)
+async def set_session_model(session_id: str, request: SetSessionModelRequest):
+    """
+    设置会话的模型
+
+    Args:
+        session_id: 会话ID
+        request: 包含 model_id 的请求
+
+    Returns:
+        设置结果
+    """
+    try:
+        if session_id not in sessions:
+            raise HTTPException(status_code=404, detail="会话不存在")
+
+        # 验证模型是否存在
+        try:
+            temp_agent = TravelAgent()
+            model_config = temp_agent.config_manager.get_model_config(request.model_id)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+        # 创建新 Agent 实例
+        try:
+            new_agent = TravelAgent(model_config=request.model_id)
+        except Exception as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"创建模型实例失败: {str(e)}"
+            )
+
+        # 更新会话
+        sessions[session_id]['agent'] = new_agent
+        sessions[session_id]['model_id'] = request.model_id
+
+        return SetSessionModelResponse(
+            success=True,
+            message="模型已切换",
+            model_id=request.model_id
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"内部错误: {str(e)}")
+
+@app.get("/api/session/{session_id}/model")
+async def get_session_model(session_id: str):
+    """
+    获取会话当前使用的模型
+
+    Args:
+        session_id: 会话ID
+
+    Returns:
+        模型信息
+    """
+    try:
+        if session_id not in sessions:
+            raise HTTPException(status_code=404, detail="会话不存在")
+
+        model_id = sessions[session_id].get('model_id', 'default')
+
+        return {
+            "success": True,
+            "model_id": model_id
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 # ============ 启动函数 ============
 

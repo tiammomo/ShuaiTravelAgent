@@ -16,24 +16,26 @@ from .environment import Environment
 
 class TravelAgent:
     """旅游助手Agent：协调各模块完成旅游推荐和规划"""
-    
-    def __init__(self, config_path: str = "config/config.json"):
+
+    def __init__(self, config_path: str = "config/config.json", model_config: Optional[str] = None):
         """
         初始化Agent
-        
+
         Args:
             config_path: 配置文件路径
+            model_config: 可选的模型ID，如果提供则使用指定模型
         """
         # 初始化各模块
         self.config_manager = ConfigManager(config_path)
-        
+
         memory_config = self.config_manager.get_config('memory', {})
         self.memory_manager = MemoryManager(
             max_working_memory=memory_config.get('max_working_memory', 10),
             max_long_term_memory=memory_config.get('max_long_term_memory', 50)
         )
-        
-        llm_config = self.config_manager.get_llm_config()
+
+        # 如果指定了模型ID，使用指定模型的配置
+        llm_config = self.config_manager.get_llm_config(model_config)
         self.llm_client = LLMClient(llm_config)
         
         self.reasoner = Reasoner()
