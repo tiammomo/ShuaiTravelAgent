@@ -13,7 +13,7 @@ FastAPI Web服务模块
 版本：2.0.0
 """
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -110,7 +110,7 @@ def clean_expired_sessions() -> None:
 # ==================== API端点 ====================
 
 @app.post("/api/chat/stream")
-async def chat_stream(request: ChatRequest):
+async def chat_stream(request: Request):
     """
     流式聊天接口
 
@@ -128,23 +128,50 @@ async def chat_stream(request: ChatRequest):
     - error: 错误信息
 
     Args:
-        request: 聊天请求
+        request: HTTP请求
 
     Returns:
         SSE流式响应
     """
-    session_id, agent = get_or_create_session(request.session_id)
+    import traceback
+    import logging
+    logger = logging.getLogger(__name__)
+
+    # 手动解析JSON请求体
+    try:
+        body = await request.json()
+        message = body.get('message', '')
+        session_id_param = body.get('session_id')
+    except Exception as e:
+        logger.error(f"解析请求体失败: {e}")
+        raise HTTPException(status_code=400, detail=f"请求体解析失败: {str(e)}")
+
+    if not message:
+        raise HTTPException(status_code=400, detail="消息内容不能为空")
+
+    session_id, agent = get_or_create_session(session_id_param)
+    logger.info(f"开始处理聊天请求，会话ID: {session_id}, 消息: {message[:50]}...")
 
     async def event_generator():
         try:
             # 发送会话ID
             yield f"data: {json.dumps({'type': 'session_id', 'session_id': session_id}, ensure_ascii=False)}\n\n"
+            logger.info(f"已发送会话ID: {session_id}")
+
+            # 立即发送思考开始信号，让前端知道后端正在处理
+            # 这样可以避免前端一直显示"深度思考中..."
+            yield f"data: {json.dumps({'type': 'reasoning_start'}, ensure_ascii=False)}\n\n"
+            logger.info("已发送思考开始信号")
 
             # 执行ReAct处理（异步等待）
-            result = await agent.process(request.message)
+            logger.info("开始调用 agent.process()")
+            result = await agent.process(message)
+            logger.info(f"agent.process() 完成, success={result.get('success')}")
 
             if not result.get('success'):
-                yield f"data: {json.dumps({'type': 'error', 'content': result.get('error', '处理失败')}, ensure_ascii=False)}\n\n"
+                error_content = result.get('error', '处理失败')
+                logger.error(f"处理失败: {error_content}")
+                yield f"data: {json.dumps({'type': 'error', 'content': error_content}, ensure_ascii=False)}\n\n"
                 return
 
             # 提取结果
@@ -154,7 +181,21 @@ async def chat_stream(request: ChatRequest):
             tools_used = reasoning.get('tools_used', [])
             total_steps = reasoning.get('total_steps', 0)
 
-            # 发送元数据（包含思考过程的基本信息）
+            # 发送思考过程内容（逐行传输）
+            if reasoning_text:
+                logger.info(f"开始发送思考内容，共 {len(reasoning_text)} 字符")
+                lines = reasoning_text.split('\n')
+                for line in lines:
+                    if line.strip():
+                        yield f"data: {json.dumps({'type': 'reasoning_chunk', 'content': line + '\n'}, ensure_ascii=False)}\n\n"
+                        await asyncio.sleep(0.05)  # 控制思考内容的输出速度
+                logger.info("思考内容发送完成")
+
+            # 发送思考过程结束信号
+            yield f"data: {json.dumps({'type': 'reasoning_end'}, ensure_ascii=False)}\n\n"
+            logger.info("已发送思考结束信号")
+
+            # 发送元数据
             yield f"data: {json.dumps({
                 'type': 'metadata',
                 'has_reasoning': bool(reasoning_text),
@@ -164,28 +205,9 @@ async def chat_stream(request: ChatRequest):
                 'answer_length': len(answer) if answer else 0
             }, ensure_ascii=False)}\n\n"
 
-            # 如果有思考过程，先流式输出思考过程
-            if reasoning_text:
-                # 发送思考过程开始信号
-                yield f"data: {json.dumps({'type': 'reasoning_start'}, ensure_ascii=False)}\n\n"
-
-                # 流式传输思考过程（按行分割，每行作为一块）
-                import re
-                # 按行分割思考过程，但保留格式
-                lines = reasoning_text.split('\n')
-                for line in lines:
-                    if line.strip():  # 跳过空行
-                        yield f"data: {json.dumps({
-                            'type': 'reasoning_chunk',
-                            'content': line
-                        }, ensure_ascii=False)}\n\n"
-                        await asyncio.sleep(0.02)  # 控制思考过程的输出速度
-
-                # 发送思考过程结束信号
-                yield f"data: {json.dumps({'type': 'reasoning_end'}, ensure_ascii=False)}\n\n"
-
             # 发送回答开始信号
             yield f"data: {json.dumps({'type': 'answer_start'}, ensure_ascii=False)}\n\n"
+            logger.info("开始发送回答内容")
 
             # 流式传输回答内容（逐字符）
             for char in answer:
@@ -195,12 +217,18 @@ async def chat_stream(request: ChatRequest):
             # 更新会话状态
             sessions[session_id]['message_count'] += 1
             sessions[session_id]['last_active'] = datetime.now().isoformat()
+            logger.info(f"回答发送完成，共 {len(answer)} 字符")
 
             # 发送结束信号
             yield f"data: {json.dumps({'type': 'done'}, ensure_ascii=False)}\n\n"
 
+        except asyncio.CancelledError:
+            logger.warning("客户端断开连接")
+            yield f"data: {json.dumps({'type': 'error', 'content': '客户端断开连接'}, ensure_ascii=False)}\n\n"
         except Exception as e:
-            yield f"data: {json.dumps({'type': 'error', 'content': str(e)}, ensure_ascii=False)}\n\n"
+            error_msg = f"服务器错误: {str(e)}"
+            logger.error(f"SSE流式响应错误: {error_msg}\n{traceback.format_exc()}")
+            yield f"data: {json.dumps({'type': 'error', 'content': error_msg}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(
         event_generator(),

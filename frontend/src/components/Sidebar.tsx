@@ -266,7 +266,7 @@ const Sidebar: React.FC = () => {
       </Modal>
 
       <div style={{ marginTop: '16px', textAlign: 'center', fontSize: '12px', color: '#999' }}>
-        Powered by GPT-4o-mini
+        Powered by tiammomo
       </div>
     </div>
   );

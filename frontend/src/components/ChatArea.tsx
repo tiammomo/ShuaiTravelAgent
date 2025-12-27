@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Input, Button, Space } from 'antd';
-import { SendOutlined, StopOutlined } from '@ant-design/icons';
+import { Input, Button, Space, Card } from 'antd';
+import { SendOutlined, StopOutlined, DownOutlined, UpOutlined } from '@ant-design/icons';
 import { useAppContext } from '../context/AppContext';
 import { apiService } from '../services/api';
 import MessageList from './MessageList';
@@ -50,21 +50,37 @@ const ChatArea: React.FC = () => {
   const [streamingReasoning, setStreamingReasoning] = useState('');
   const [waitingForResponse, setWaitingForResponse] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
-  const [isAnswering, setIsAnswering] = useState(false);
-  const [reasoningContent, setReasoningContent] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  // 思考过程展开状态（按会话ID存储）
+  const [reasoningExpanded, setReasoningExpanded] = useState<Record<string, boolean>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // 使用动态加载动画
   const loadingDots = useLoadingDots(waitingForResponse);
 
   // 自动滚动到底部
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
-
   useEffect(() => {
-    scrollToBottom();
-  }, [messages, streamingMessage, streamingReasoning]);
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, streamingMessage, streamingReasoning, isThinking, waitingForResponse]);
+
+  // 监听会话变化，重置所有流式状态
+  useEffect(() => {
+    setStreamingMessage('');
+    setStreamingReasoning('');
+    setWaitingForResponse(false);
+    setIsThinking(false);
+    setError(null);
+    setIsStreaming(false);
+    setStopStreaming(false);
+  }, [currentSessionId]);
+
+  // 切换思考过程展开/折叠
+  const toggleReasoning = (messageId: string) => {
+    setReasoningExpanded(prev => ({
+      ...prev,
+      [messageId]: !prev[messageId]
+    }));
+  };
 
   // 发送消息
   const handleSend = async () => {
@@ -101,7 +117,11 @@ const ChatArea: React.FC = () => {
     setStopStreaming(false);
     setWaitingForResponse(true);
     setIsThinking(true);
-    setIsAnswering(false);
+    setError(null);
+
+    // 重置流式状态
+    setStreamingMessage('');
+    setStreamingReasoning('');
 
     // 如果是首次发送消息，设置会话名称
     if (isFirstMessage) {
@@ -113,14 +133,8 @@ const ChatArea: React.FC = () => {
       }
     }
 
-    // 初始化流式消息
     let fullResponse = '';
     let fullReasoning = '';
-
-    // 重置状态
-    setStreamingMessage('');
-    setStreamingReasoning('');
-    setReasoningContent('');
 
     // 发起流式请求
     await apiService.fetchStreamChat(
@@ -131,11 +145,6 @@ const ChatArea: React.FC = () => {
       {
         // 处理回答内容
         onChunk: (content) => {
-          // 离开思考阶段，进入回答阶段
-          if (isThinking || isAnswering === false) {
-            setIsThinking(false);
-            setIsAnswering(true);
-          }
           fullResponse += content;
           setStreamingMessage((prev) => prev + content);
         },
@@ -147,76 +156,72 @@ const ChatArea: React.FC = () => {
         // 思考过程开始
         onReasoningStart: () => {
           setIsThinking(true);
-          setIsAnswering(false);
         },
         // 思考过程结束
         onReasoningEnd: () => {
-          setReasoningContent(fullReasoning);
+          setIsThinking(false);
         },
         // 回答开始
-        onAnswerStart: () => {
-          setIsAnswering(true);
-          setIsThinking(false);
-        },
+        onAnswerStart: () => {},
         // 元数据
-        onMetadata: () => {
-          // 元数据处理（可扩展）
-        },
+        onMetadata: () => {},
         // 错误处理
-        onError: (error) => {
+        onError: (errorMsg) => {
           setWaitingForResponse(false);
           setIsThinking(false);
-          setIsAnswering(false);
-          const errorMsg = `抱歉，出现错误：${error}`;
-          setStreamingMessage(errorMsg);
-          fullResponse = errorMsg;
+          setError(errorMsg);
+          fullResponse = `抱歉，出现错误：${errorMsg}`;
         },
         // 完成
         onComplete: () => {
-          setWaitingForResponse(false);
-          setIsThinking(false);
-          setIsAnswering(false);
+          const finalReasoning = fullReasoning;
+          const finalContent = fullResponse || streamingMessage;
 
-          // 合并思考过程和回答内容
+          // 创建最终消息（包含思考过程）
           const finalMessage = {
             role: 'assistant' as const,
-            content: fullResponse || streamingMessage,
-            reasoning: fullReasoning || reasoningContent || streamingReasoning,
+            content: finalContent,
+            reasoning: finalReasoning,
             timestamp: new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
           };
+
+          // 添加最终消息到历史
           addMessage(finalMessage);
+
+          // 清空流式状态
           setStreamingMessage('');
           setStreamingReasoning('');
+          setWaitingForResponse(false);
           setIsStreaming(false);
-          // 自动刷新会话列表
-          refreshSessions();
         },
         onStop: () => stopStreaming,
       }
     );
 
-    // 如果被停止
-    if (stopStreaming) {
-      setWaitingForResponse(false);
-      setIsThinking(false);
-      setIsAnswering(false);
-      const finalMessage = {
-        role: 'assistant' as const,
-        content: fullResponse + '\n\n⚠️ 已停止生成',
-        reasoning: fullReasoning || reasoningContent,
-        timestamp: new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
-      };
-      addMessage(finalMessage);
-      setStreamingMessage('');
-      setStreamingReasoning('');
-      setIsStreaming(false);
-      setStopStreaming(false);
-    }
+    // 刷新会话列表
+    refreshSessions();
   };
 
   // 停止生成
   const handleStop = () => {
     setStopStreaming(true);
+    setWaitingForResponse(false);
+    setIsThinking(false);
+    setIsStreaming(false);
+
+    // 如果有部分内容，添加到消息历史
+    if (streamingMessage || streamingReasoning) {
+      const finalMessage = {
+        role: 'assistant' as const,
+        content: (streamingMessage || '已停止生成') + '\n\n⚠️ 已停止生成',
+        reasoning: streamingReasoning,
+        timestamp: new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+      };
+      addMessage(finalMessage);
+    }
+
+    setStreamingMessage('');
+    setStreamingReasoning('');
   };
 
   return (
@@ -227,22 +232,66 @@ const ChatArea: React.FC = () => {
       </div>
 
       <div style={{ flex: 1, overflow: 'auto', marginBottom: '16px' }}>
-        {/* 显示思考过程流 */}
-        {isThinking && streamingReasoning && (
-          <MessageList
-            messages={[]}
-            streamingMessage=""
-            isThinking={true}
-            thinkingContent={streamingReasoning}
-          />
-        )}
-        {/* 显示回答流 */}
+        {/* 显示已完成的对话消息 */}
         <MessageList
           messages={messages}
-          streamingMessage={streamingMessage}
-          loadingDots={loadingDots}
-          isThinking={isThinking && !streamingReasoning}
+          reasoningExpanded={reasoningExpanded}
+          onToggleReasoning={toggleReasoning}
         />
+
+        {/* 当前思考过程（默认折叠，点击才显示） */}
+        {isThinking && (
+          <div style={{
+            display: 'flex',
+            justifyContent: 'center',
+            marginBottom: '8px'
+          }}>
+            <Card
+              style={{
+                width: '100%',
+                background: '#fafafa',
+                borderRadius: '8px',
+                border: '1px dashed #d9d9d9',
+              }}
+              bodyStyle={{ padding: '12px 16px' }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', color: '#999' }}>
+                <span style={{
+                  display: 'inline-block',
+                  width: '12px',
+                  height: '12px',
+                  borderRadius: '50%',
+                  border: '2px solid #722ed1',
+                  borderTopColor: 'transparent',
+                  animation: 'spin 1s linear infinite'
+                }} />
+                <span style={{ fontSize: '13px' }}>深度思考中{loadingDots}</span>
+              </div>
+            </Card>
+            <style>{`
+              @keyframes spin {
+                to { transform: rotate(360deg); }
+              }
+            `}</style>
+          </div>
+        )}
+
+        {/* 当前回答（流式显示） */}
+        {streamingMessage && (
+          <MessageList
+            messages={[]}
+            streamingMessage={streamingMessage}
+            isThinking={false}
+          />
+        )}
+
+        {/* 错误信息 */}
+        {error && (
+          <div style={{ color: 'red', padding: '12px', background: '#fff2f0', borderRadius: '8px', marginBottom: '8px' }}>
+            {error}
+          </div>
+        )}
+
         <div ref={messagesEndRef} />
       </div>
 

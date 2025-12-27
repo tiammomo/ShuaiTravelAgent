@@ -2,18 +2,19 @@
 
 ## 项目概述
 
-一个基于自定义单智能体架构的智能旅游助手系统，集成GPT-4o-mini大模型，提供城市推荐、景点查询、路线规划等功能。
+一个基于自定义ReAct Agent架构的智能旅游助手系统，集成GPT-4o-mini大模型，提供城市推荐、景点查询、路线规划等功能。
 
-项目采用**Python后端（FastAPI）+ React前端**的现代技术栈，支持流式SSE响应、多会话管理、双层记忆系统等功能。
+项目采用**Python后端（FastAPI）+ React前端**的现代技术栈，支持SSE流式响应、多会话管理、深度思考过程展示等功能。
 
 ### 核心特性
-- ✅ **自定义Agent架构** - 无第三方AI框架依赖，完整的感知-推理-行动循环
+
+- ✅ **自定义ReAct Agent架构** - 无第三方AI框架依赖，完整的推理-行动循环
+- ✅ **深度思考展示** - 可折叠的思考过程框，类似DeepSeek的展示方式
+- ✅ **流式响应处理** - SSE实时流式输出，支持停止控制
 - ✅ **多协议LLM支持** - OpenAI、Claude、Gemini、本地模型等
-- ✅ **流式响应处理** - SSE实时流式输出 + 停止控制
-- ✅ **双层记忆管理** - 工作记忆（短期） + 长期记忆 + 用户偏好
-- ✅ **现代化前端** - React 18 + TypeScript + Vite
+- ✅ **多会话管理** - 独立的对话历史和Agent实例，会话隔离
+- ✅ **现代化前端** - React 18 + TypeScript + Ant Design + Vite
 - ✅ **完整API接口** - FastAPI Swagger文档
-- ✅ **多会话管理** - 独立的对话历史和Agent实例
 
 ---
 
@@ -22,21 +23,28 @@
 ```
 ShuaiTravelAgent/
 ├── src/shuai_travel_agent/              # 后端核心包
-│   ├── agent.py                         # Agent主体（感知-推理-行动）
+│   ├── agent.py                         # ReAct Agent主体（推理-行动循环）
 │   ├── config_manager.py                # 配置和知识库管理
 │   ├── llm_client.py                    # LLM多协议客户端
-│   ├── memory_manager.py                # 双层记忆系统
+│   ├── memory_manager.py                # 记忆系统
 │   ├── reasoner.py                      # 推理和规划引擎
 │   ├── environment.py                   # 环境交互和工具调用
-│   ├── app.py                           # FastAPI Web服务
-│   └── streamlit_app.py                 # Streamlit界面（可选）
+│   ├── io_handler.py                    # 输入输出处理和日志
+│   ├── logger_manager.py                # 日志管理系统
+│   └── app.py                           # FastAPI Web服务
 │
-├── frontend/                             # React前端
+├── frontend/                            # React前端
 │   ├── src/
-│   │   ├── components/                  # React组件（ChatArea、Sidebar等）
-│   │   ├── context/                     # 全局状态管理（Context API）
-│   │   ├── services/                    # API服务层
-│   │   ├── types/                       # TypeScript类型定义
+│   │   ├── components/
+│   │   │   ├── ChatArea.tsx             # 主聊天区域
+│   │   │   ├── MessageList.tsx          # 消息列表组件
+│   │   │   └── Sidebar.tsx              # 侧边栏（会话管理）
+│   │   ├── context/
+│   │   │   └── AppContext.tsx           # 全局状态管理
+│   │   ├── services/
+│   │   │   └── api.ts                   # API服务
+│   │   ├── types/
+│   │   │   └── index.ts                 # TypeScript类型定义
 │   │   ├── App.tsx                      # 主应用组件
 │   │   └── main.tsx                     # 入口文件
 │   ├── package.json                     # npm依赖配置
@@ -48,9 +56,8 @@ ShuaiTravelAgent/
 │   └── llm_config_examples.json         # 多协议配置示例
 │
 ├── run_api.py                           # 后端启动脚本
-├── run_streamlit.py                     # Streamlit启动脚本（可选）
 ├── requirements.txt                     # Python依赖
-└── QUICK_DEPLOY_REACT.md                # 快速部署指南
+└── README.md                            # 本文档
 ```
 
 ---
@@ -58,6 +65,7 @@ ShuaiTravelAgent/
 ## 快速开始（5分钟）
 
 ### 前置条件
+
 - Python 3.8+
 - Node.js 16+
 - npm 8+
@@ -119,23 +127,53 @@ npm run dev
 
 | 模块 | 功能 | 说明 |
 |------|------|------|
-| **Agent** | 核心推理 | 感知→推理→行动循环 |
+| **Agent** | 核心推理 | ReAct推理→行动循环 |
 | **Reasoner** | 意图识别 | 识别用户意图并生成执行计划 |
-| **MemoryManager** | 记忆管理 | 工作记忆、长期记忆、用户偏好 |
+| **MemoryManager** | 记忆管理 | 工作记忆、长期记忆 |
 | **LLMClient** | 模型调用 | 支持OpenAI/Claude/Gemini等多种模型 |
 | **Environment** | 工具调用 | 城市查询、景点推荐、路线规划 |
-| **ConfigManager** | 配置管理 | 内置旅游知识库（6城市24景点） |
+| **ConfigManager** | 配置管理 | 内置旅游知识库（多城市多景点） |
+| **LoggerManager** | 日志管理 | 结构化日志、trace ID追踪 |
+| **IOHandler** | 输入输出 | 格式化处理、日志记录 |
 
 ### 前端功能
 
-- **✅ 会话管理** - 创建、切换、删除、重命名多个对话会话
-- **✅ 智能会话命名** - 首次发送消息时自动使用问题前缀作为会话标题
-- **✅ 消息缓存保留** - 切换会话时完整保留原会话的对话历史
-- **✅ 实时聊天** - 流式SSE响应，逐字显示AI回复
-- **✅ 停止控制** - 随时中断长文本生成
-- **✅ 消息显示优化** - 紧凑排版、优化间距、Markdown富文本渲染
+- **✅ 深度思考展示** - 可折叠的思考过程框，默认折叠只显示加载动画
+- **✅ 流式回答** - AI回答逐字流式显示
+- **✅ 停止控制** - 随时中断生成
+- **✅ 会话管理** - 创建、切换、删除、重命名对话
+- **✅ 智能会话命名** - 首次发送自动命名
+- **✅ 会话隔离** - 不同会话消息完全独立
+- **✅ 消息缓存** - 切换会话保留原会话历史
 - **✅ 响应式设计** - 适配各种屏幕尺寸
-- **✅ 状态管理** - Context API全局状态 + 会话消息缓存
+- **✅ Markdown渲染** - 支持富文本格式显示
+
+---
+
+## 深度思考功能
+
+### 交互流程
+
+```
+用户提问
+    ↓
+显示"深度思考中"加载动画（默认折叠）
+    ↓
+用户可点击展开查看思考过程
+    ↓
+思考过程流式实时显示
+    ↓
+思考完成，显示正式回答
+    ↓
+思考框可继续展开/折叠查看
+```
+
+### 界面特点
+
+- **默认状态**：只显示紫色加载动画圆圈
+- **点击展开**：显示完整的思考过程内容
+- **实时流式**：思考内容边生成边显示
+- **完成状态**：显示"深度思考"标签，可继续查看
 
 ---
 
@@ -145,26 +183,30 @@ npm run dev
 
 ```
 1. 新建会话
-   └─ 创建空会话（暂不显示在历史列表）
+   └─ 创建空会话
 
 2. 首次发送消息
    └─ 自动将问题前15个字符作为会话名称
    └─ 会话添加到历史列表
 
 3. 会话切换
-   └─ 完整保留原会话的所有消息
+   └─ 完整保留原会话的所有消息和思考过程
    └─ 加载目标会话的历史消息
+   └─ 清空当前流式状态
 
-4. 会话重命名
-   └─ 点击铅笔图标
-   └─ 修改会话名称后保存
+4. 会话删除
+   └─ 从列表移除，不会显示"No Data"
+
+5. 会话重命名
+   └─ 点击铅笔图标修改
 ```
 
 ### 内存管理
 
 - **会话消息缓存** - 每个会话的消息在内存中独立存储
-- **自动同步** - 添加/删除/切换消息时自动更新缓存
-- **会话隔离** - 不同会话之间消息完全独立
+- **自动同步** - 添加/删除/切换消息时自动更新
+- **会话隔离** - 不同会话之间消息完全独立，无干扰
+- **状态重置** - 切换会话时自动清空流式状态
 
 ---
 
@@ -172,7 +214,7 @@ npm run dev
 
 ```
 city_recommendation  - 城市推荐
-attractive_query     - 景点查询
+attraction_query     - 景点查询
 route_planning       - 路线规划
 preference_update    - 偏好更新
 general_chat         - 一般对话
@@ -188,7 +230,7 @@ general_chat         - 一般对话
 ```json
 {
   "agent_name": "TravelAssistantAgent",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "llm": {
     "provider_type": "openai",
     "api_key": "YOUR_API_KEY_HERE",
@@ -252,6 +294,7 @@ general_chat         - 一般对话
 ## API接口
 
 ### 基础URL
+
 ```
 http://localhost:8000
 API文档：http://localhost:8000/docs
@@ -259,9 +302,9 @@ API文档：http://localhost:8000/docs
 
 ### 核心接口
 
-**1. 普通聊天**
+**1. 流式聊天（SSE）**
 ```bash
-POST /api/chat
+POST /api/chat/stream
 Content-Type: application/json
 
 {
@@ -269,22 +312,30 @@ Content-Type: application/json
   "session_id": "optional-session-id"
 }
 
-Response: {"success": true, "response": "...", "session_id": "xxx"}
+Response: SSE流式输出
+- type: session_id      - 会话ID
+- type: reasoning_start - 思考开始
+- type: reasoning_chunk - 思考过程内容
+- type: reasoning_end   - 思考结束
+- type: answer_start    - 回答开始
+- type: chunk           - 回答内容
+- type: done            - 完成
 ```
 
-**2. 流式聊天（SSE）**
-```bash
-POST /api/chat/stream
-内容自动流式输出，支持停止控制
-```
-
-**3. 会话管理**
+**2. 会话管理**
 ```bash
 POST /api/session/new           # 创建新会话
-GET /api/sessions               # 获取会话列表
+GET /api/sessions               # 获取会话列表（过滤空会话）
 DELETE /api/session/{id}        # 删除会话
 PUT /api/session/{id}/name      # 重命名会话
 POST /api/clear                 # 清空对话
+GET /api/session/{id}/model     # 获取会话模型
+PUT /api/session/{id}/model     # 设置会话模型
+```
+
+**3. 模型管理**
+```bash
+GET /api/models                 # 获取可用模型列表
 ```
 
 **4. 系统接口**
@@ -338,12 +389,6 @@ npm run build
    - 将`dist`文件夹集成到后端
    - 单进程部署
 
-3. **Docker容器化**
-   - 构建Docker镜像
-   - 支持编排部署
-
-详见 `QUICK_DEPLOY_REACT.md` 了解完整部署步骤。
-
 ---
 
 ## 常见问题
@@ -376,22 +421,43 @@ A: 是的。每个用户会话有独立的Agent实例和对话历史
    通过 session_id 进行隔离
 ```
 
-**Q5: 会话切换后原会话的消息不见了？**
+**Q5: 思考过程不显示怎么办？**
 ```
-A: 这是正常的。消息保存在内存中，需要添加 localStorage 或数据库持久化功能。
-   注意：刷新页面会丢失消息
-```
-
-**Q6: 新建会话为什么不需要手动添加？**
-```
-A: 会话消息数为 0 条时，会话不显示在历史列表。
-   首次发送消息后，会话自动添加到列表。
+A: 思考过程默认折叠，点击"深度思考中"的加载框即可展开查看
+   如果完全没有显示，检查后端是否正常返回 reasoning_chunk 事件
 ```
 
-**Q7: 如何获取更详细的帮助？**
+**Q6: 新建会话为什么在历史列表看不到？**
 ```
-A: 查看 QUICK_DEPLOY_REACT.md 中的完整部署和常见问题章节
+A: 这是设计如此。消息数为0条时会话不显示在历史列表
+   首次发送消息后，会话自动添加到列表
 ```
+
+**Q7: 会话切换后消息会丢失吗？**
+```
+A: 不会。切换会话时：
+   - 原会话消息保存在内存缓存中
+   - 目标会话消息加载到界面
+   - 流式状态会被清空
+   注意：刷新页面会丢失消息（暂未持久化）
+```
+
+---
+
+## 更新日志
+
+### v2.0.0
+- 新增深度思考展示功能（可折叠思考过程框）
+- 优化会话隔离机制
+- 改进流式响应稳定性
+- 添加结构化日志系统
+- 优化前端UI/UX
+
+### v1.2.0
+- 支持多协议LLM（OpenAI/Claude/Gemini/本地模型）
+- 完善会话管理功能
+- 添加停止生成控制
+- 优化Markdown渲染
 
 ---
 

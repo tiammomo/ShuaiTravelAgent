@@ -161,14 +161,23 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   // 刷新会话列表（自动调用，无需手动操作）
+  // 修改逻辑：与loadSessions保持一致，保留最近1小时创建的会话
   const refreshSessions = async (includeEmpty: boolean = false) => {
     try {
       const data = await apiService.getSessions();
-      // 默认过滤掉没有消息的会话，但可以通过参数控制
-      const activeSessions = includeEmpty
-        ? data.sessions
-        : data.sessions.filter(s => s.message_count > 0);
-      setSessions(activeSessions);
+      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+
+      if (includeEmpty) {
+        // 如果明确要求显示空会话，显示所有会话
+        setSessions(data.sessions);
+      } else {
+        // 默认逻辑：过滤掉没有消息的会话，但保留最近1小时创建的会话
+        const activeSessions = data.sessions.filter(s =>
+          s.message_count > 0 ||
+          new Date(s.last_active) > oneHourAgo
+        );
+        setSessions(activeSessions);
+      }
     } catch (error) {
       // 静默失败，不影响用户操作
     }

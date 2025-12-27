@@ -110,6 +110,7 @@ class APIService {
     onComplete: () => void;
     onStop?: () => boolean;
   }): Promise<void> {
+    console.log('[API] 发送请求到 /api/chat/stream:', request);
     try {
       const response = await fetch(`${API_BASE}/chat/stream`, {
         method: 'POST',
@@ -119,8 +120,12 @@ class APIService {
         body: JSON.stringify(request),
       });
 
+      console.log('[API] 响应状态:', response.status, response.statusText);
+
       if (!response.ok) {
-        callbacks.onError(`HTTP error! status: ${response.status}`);
+        const errorText = await response.text();
+        console.error('[API] HTTP错误:', response.status, errorText);
+        callbacks.onError(`HTTP error! status: ${response.status} - ${errorText}`);
         return;
       }
 
@@ -128,6 +133,7 @@ class APIService {
       const decoder = new TextDecoder();
 
       if (!reader) {
+        console.error('[API] 无法获取响应流读取器');
         callbacks.onError('无法读取响应流');
         return;
       }
@@ -221,6 +227,7 @@ class APIService {
         }
       }
     } catch (error) {
+      console.error('[API] 网络错误:', error);
       callbacks.onError(error instanceof Error ? error.message : '网络错误');
     }
   }
