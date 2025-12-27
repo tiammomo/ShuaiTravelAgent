@@ -49,8 +49,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [messages, setMessagesState] = useState<Message[]>([]);
   // 会话消息缓存：保存每个会话的消息列表
   const [sessionMessages, setSessionMessages] = useState<Record<string, Message[]>>({});
-  // 会话模型缓存：保存每个会话使用的模型ID
-  const [sessionModelIds, setSessionModelIds] = useState<Record<string, string>>({});
 
   const [isStreaming, setIsStreaming] = useState(false);
   const [stopStreaming, setStopStreaming] = useState(false);
@@ -61,7 +59,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     try {
       const data = await apiService.getSessions();
       // 过滤掉没有消息的会话（首次发送前不显示）
-      const activeSessions = data.sessions.filter(s => s.message_count > 0);
+      // 但保留最近创建的会话（可能有用户正在创建中）
+      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+      const activeSessions = data.sessions.filter(s =>
+        s.message_count > 0 ||
+        new Date(s.last_active) > oneHourAgo
+      );
       setSessions(activeSessions);
     } catch (error) {
       console.error('加载会话失败:', error);
@@ -110,10 +113,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (currentSessionId) {
       try {
         await apiService.setSessionModel(currentSessionId, modelId);
-        setSessionModelIds(prev => ({
-          ...prev,
-          [currentSessionId]: modelId
-        }));
       } catch (error) {
         console.error('设置会话模型失败:', error);
       }
@@ -162,11 +161,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   // 刷新会话列表（自动调用，无需手动操作）
-  const refreshSessions = async () => {
+  const refreshSessions = async (includeEmpty: boolean = false) => {
     try {
       const data = await apiService.getSessions();
-      // 过滤掉没有消息的会话
-      const activeSessions = data.sessions.filter(s => s.message_count > 0);
+      // 默认过滤掉没有消息的会话，但可以通过参数控制
+      const activeSessions = includeEmpty
+        ? data.sessions
+        : data.sessions.filter(s => s.message_count > 0);
       setSessions(activeSessions);
     } catch (error) {
       // 静默失败，不影响用户操作
@@ -199,28 +200,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         const data = await apiService.getSessionModel(id);
         if (data.success && data.model_id && data.model_id !== 'default') {
           setCurrentModelIdState(data.model_id);
-          setSessionModelIds(prev => ({
-            ...prev,
-            [id]: data.model_id
-          }));
-        } else {
-          // 使用当前选择的模型
-          if (currentModelId) {
-            setSessionModelIds(prev => ({
-              ...prev,
-              [id]: currentModelId
-            }));
-          }
         }
       } catch (error) {
         console.error('获取会话模型失败:', error);
-        // 使用当前选择的模型
-        if (currentModelId) {
-          setSessionModelIds(prev => ({
-            ...prev,
-            [id]: currentModelId
-          }));
-        }
       }
     }
   };

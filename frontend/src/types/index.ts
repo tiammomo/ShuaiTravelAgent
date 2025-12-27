@@ -3,6 +3,7 @@ export interface Message {
   role: 'user' | 'assistant';
   content: string;
   timestamp: string;
+  reasoning?: string;  // AI思考过程（可选）
 }
 
 export interface SessionInfo {

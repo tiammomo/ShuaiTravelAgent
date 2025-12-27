@@ -1,15 +1,19 @@
-import React from 'react';
-import { Card } from 'antd';
+import React, { useState } from 'react';
+import { Card, Collapse, Tag } from 'antd';
 import { Message } from '../types';
 import ReactMarkdown from 'react-markdown';
 import type { Components } from 'react-markdown';
+import { BulbOutlined, EyeOutlined, EyeInvisibleOutlined } from '@ant-design/icons';
 
 interface Props {
   messages: Message[];
   streamingMessage?: string;
   loadingDots?: string;
   isThinking?: boolean;
+  thinkingContent?: string;  // 实时思考过程内容
 }
+
+const { Panel } = Collapse;
 
 // 清理文本中的多余空行和格式问题
 const cleanContent = (content: string): string => {
@@ -37,7 +41,106 @@ const markdownComponents: Components = {
   ul: ({ children }) => <ul style={{ margin: '2px 0', paddingLeft: '20px' }}>{children}</ul>,
 };
 
-const MessageList: React.FC<Props> = ({ messages, streamingMessage, loadingDots, isThinking }) => {
+// 思考过程面板组件
+const ReasoningPanel: React.FC<{ reasoning: string }> = ({ reasoning }) => {
+  const [expanded, setExpanded] = useState(true);
+
+  if (!reasoning) return null;
+
+  return (
+    <Collapse
+      defaultActiveKey={['reasoning']}
+      style={{ marginTop: '8px', background: '#fafafa' }}
+      bordered={false}
+    >
+      <Panel
+        key="reasoning"
+        header={
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <BulbOutlined style={{ color: '#722ed1' }} />
+            <span style={{ fontWeight: 500 }}>AI 思考过程</span>
+            <Tag color="purple" style={{ marginLeft: '8px' }}>可展开查看</Tag>
+          </div>
+        }
+        extra={
+          expanded ?
+            <EyeOutlined onClick={(e) => { e.stopPropagation(); setExpanded(false); }} /> :
+            <EyeInvisibleOutlined onClick={(e) => { e.stopPropagation(); setExpanded(true); }} />
+        }
+      >
+        <div style={{
+          background: '#f5f5f5',
+          padding: '12px',
+          borderRadius: '6px',
+          fontFamily: 'monospace',
+          fontSize: '12px',
+          lineHeight: '1.6',
+          whiteSpace: 'pre-wrap',
+          maxHeight: '400px',
+          overflow: 'auto'
+        }}>
+          <ReactMarkdown>{reasoning}</ReactMarkdown>
+        </div>
+      </Panel>
+    </Collapse>
+  );
+};
+
+// 实时思考过程流显示组件
+const StreamingReasoning: React.FC<{ content: string }> = ({ content }) => {
+  const [expanded, setExpanded] = useState(true);
+
+  if (!content) return null;
+
+  return (
+    <div style={{ marginTop: '8px' }}>
+      <Collapse
+        defaultActiveKey={['thinking']}
+        style={{ background: '#fafafa' }}
+        bordered={false}
+      >
+        <Panel
+          key="thinking"
+          header={
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <BulbOutlined style={{ color: '#722ed1', animation: 'pulse 1.5s infinite' }} />
+              <span style={{ fontWeight: 500, color: '#722ed1' }}>AI 思考中...</span>
+              <Tag color="processing" style={{ marginLeft: '8px' }}>实时生成</Tag>
+            </div>
+          }
+          extra={
+            expanded ?
+              <EyeOutlined onClick={(e) => { e.stopPropagation(); setExpanded(false); }} /> :
+              <EyeInvisibleOutlined onClick={(e) => { e.stopPropagation(); setExpanded(true); }} />
+          }
+        >
+          <div style={{
+            background: '#f0f0f0',
+            padding: '12px',
+            borderRadius: '6px',
+            fontFamily: 'monospace',
+            fontSize: '12px',
+            lineHeight: '1.6',
+            whiteSpace: 'pre-wrap',
+            maxHeight: '300px',
+            overflow: 'auto',
+            borderLeft: '3px solid #722ed1'
+          }}>
+            {content}
+          </div>
+        </Panel>
+      </Collapse>
+      <style>{`
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.5; }
+        }
+      `}</style>
+    </div>
+  );
+};
+
+const MessageList: React.FC<Props> = ({ messages, streamingMessage, loadingDots, isThinking, thinkingContent }) => {
   return (
     <div style={{ maxWidth: '900px', margin: '0 auto', width: '100%' }}>
       {messages.map((msg, index) => (
@@ -66,7 +169,15 @@ const MessageList: React.FC<Props> = ({ messages, streamingMessage, loadingDots,
                 {cleanContent(msg.content)}
               </ReactMarkdown>
             </div>
-            <div className="chat-message-time">{msg.timestamp}</div>
+
+            {/* 显示思考过程（仅助手消息） */}
+            {msg.role === 'assistant' && msg.reasoning && (
+              <ReasoningPanel reasoning={msg.reasoning} />
+            )}
+
+            <div className="chat-message-time" style={{
+              marginTop: msg.role === 'assistant' && msg.reasoning ? '8px' : '0'
+            }}>{msg.timestamp}</div>
           </Card>
         </div>
       ))}
@@ -84,9 +195,12 @@ const MessageList: React.FC<Props> = ({ messages, streamingMessage, loadingDots,
             bodyStyle={{ padding: '12px 16px' }}
           >
             <div className="chat-message-content" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <BulbOutlined style={{ color: '#722ed1', fontSize: '16px', animation: 'pulse 1.5s infinite' }} />
               <span className="thinking-indicator">●{loadingDots || ''}</span>
-              <span style={{ color: '#666' }}>正在思考中...</span>
+              <span style={{ color: '#666' }}>正在深度思考中...</span>
             </div>
+            {/* 显示实时思考过程 */}
+            {thinkingContent && <StreamingReasoning content={thinkingContent} />}
           </Card>
         </div>
       )}
@@ -116,5 +230,17 @@ const MessageList: React.FC<Props> = ({ messages, streamingMessage, loadingDots,
     </div>
   );
 };
+
+// 添加全局动画样式
+const styleSheet = document.createElement('style');
+styleSheet.textContent = `
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+`;
+if (document.head) {
+  document.head.appendChild(styleSheet);
+}
 
 export default MessageList;

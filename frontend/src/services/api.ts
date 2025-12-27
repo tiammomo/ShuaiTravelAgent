@@ -84,13 +84,15 @@ class APIService {
     onError: (error: string) => void;
     onComplete: () => void;
   }): EventSource {
-    const url = new URL(`${window.location.origin}${API_BASE}/chat/stream`);
-
-    // 使用POST请求的Body数据需要特殊处理
-    // EventSource只支持GET，所以需要通过服务端配置或使用fetch
-    // 这里我们使用fetch + ReadableStream替代EventSource
-
-    this.fetchStreamChat(request, callbacks);
+    // 使用fetch + ReadableStream替代EventSource
+    // 启动fetch流式请求（不等待完成）
+    this.fetchStreamChat(request, {
+      onChunk: callbacks.onChunk,
+      onReasoning: () => {},
+      onMetadata: () => {},
+      onError: callbacks.onError,
+      onComplete: callbacks.onComplete,
+    });
 
     // 返回一个空的EventSource（实际使用fetch）
     return new EventSource('');
@@ -99,6 +101,11 @@ class APIService {
   // 使用fetch处理SSE流
   async fetchStreamChat(request: ChatRequest, callbacks: {
     onChunk: (content: string) => void;
+    onReasoning: (content: string) => void;
+    onReasoningStart: () => void;
+    onReasoningEnd: () => void;
+    onAnswerStart: () => void;
+    onMetadata: (data: { totalSteps: number; toolsUsed: string[]; hasReasoning: boolean; reasoningLength: number; answerLength: number }) => void;
     onError: (error: string) => void;
     onComplete: () => void;
     onStop?: () => boolean;
@@ -153,11 +160,58 @@ class APIService {
 
             try {
               const data = JSON.parse(dataStr);
+              const dataType = data.type;
 
-              if (data.chunk) {
+              // 处理元数据
+              if (dataType === 'metadata') {
+                callbacks.onMetadata({
+                  totalSteps: data.total_steps || 0,
+                  toolsUsed: data.tools_used || [],
+                  hasReasoning: data.has_reasoning || false,
+                  reasoningLength: data.reasoning_length || 0,
+                  answerLength: data.answer_length || 0
+                });
+              }
+              // 处理思考过程开始
+              else if (dataType === 'reasoning_start') {
+                callbacks.onReasoningStart();
+              }
+              // 处理思考过程内容
+              else if (dataType === 'reasoning_chunk' && data.content) {
+                callbacks.onReasoning(data.content + '\n');
+              }
+              // 处理思考过程结束
+              else if (dataType === 'reasoning_end') {
+                callbacks.onReasoningEnd();
+              }
+              // 处理答案开始
+              else if (dataType === 'answer_start') {
+                callbacks.onAnswerStart();
+              }
+              // 处理答案内容
+              else if (dataType === 'chunk' && data.content) {
+                callbacks.onChunk(data.content);
+              }
+              // 处理错误
+              else if (dataType === 'error' && data.content) {
+                callbacks.onError(data.content);
+                return;
+              }
+              // 处理结束
+              else if (dataType === 'done') {
+                callbacks.onComplete();
+                return;
+              }
+              // 兼容旧格式
+              else if (data.chunk) {
                 callbacks.onChunk(data.chunk);
-              } else if (data.error) {
+              }
+              else if (data.error) {
                 callbacks.onError(data.error);
+                return;
+              }
+              else if (data.done) {
+                callbacks.onComplete();
                 return;
               }
             } catch (e) {

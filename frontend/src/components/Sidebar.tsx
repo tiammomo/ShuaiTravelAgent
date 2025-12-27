@@ -10,6 +10,7 @@ import {
 } from '@ant-design/icons';
 import { useAppContext } from '../context/AppContext';
 import { apiService } from '../services/api';
+import { SessionInfo } from '../types';
 
 const { Option } = Select;
 
@@ -18,16 +19,14 @@ const Sidebar: React.FC = () => {
     config,
     setConfig,
     currentSessionId,
-    setCurrentSessionId,
     switchSession,
-    clearMessages,
-    setMessages,
     availableModels,
     currentModelId,
     setCurrentModelId,
     loadingModels,
     sessions,
     refreshSessions,
+    clearMessages,
   } = useAppContext();
 
   const [apiBase, setApiBase] = useState(config.apiBase);
@@ -43,6 +42,7 @@ const Sidebar: React.FC = () => {
       const data = await apiService.createSession();
       // 使用switchSession切换到新会话，保留原会话消息
       switchSession(data.session_id);
+      // 刷新会话列表
       await refreshSessions();
       antMessage.success('新会话已创建');
     } catch (error) {

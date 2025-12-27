@@ -8,7 +8,7 @@ Provides city recommendations, attraction queries, and route planning.
 __version__ = "1.0.0"
 __author__ = "Shuai"
 
-from .agent import TravelAgent
+from .agent import ReActTravelAgent
 from .config_manager import ConfigManager
 from .memory_manager import MemoryManager
 from .llm_client import LLMClient
@@ -16,7 +16,7 @@ from .reasoner import Reasoner, IntentType
 from .environment import Environment
 
 __all__ = [
-    "TravelAgent",
+    "ReActTravelAgent",
     "ConfigManager",
     "MemoryManager",
     "LLMClient",
