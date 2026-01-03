@@ -2,33 +2,138 @@
 gRPC 服务器
 """
 
+# 添加 agent 根目录到路径，这样可以使用绝对导入
 import sys
 import os
+AGENT_ROOT = os.path.dirname(os.path.dirname(__file__))  # agent/
+if AGENT_ROOT not in sys.path:
+    sys.path.insert(0, AGENT_ROOT)
+
 import grpc
 from concurrent import futures
 import json
 import logging
+import asyncio
+import queue
+import threading
 from typing import Iterator
-
-# 添加 proto 路径
-PROTO_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'proto')
-if PROTO_PATH not in sys.path:
-    sys.path.insert(0, PROTO_PATH)
+from datetime import datetime
 
 from proto import agent_pb2, agent_pb2_grpc
 
-from .core.travel_agent import ReActTravelAgent
+from core.travel_agent import ReActTravelAgent
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+class AsyncThoughtStreamer:
+    """异步思考流式输出器 - 用于实时传递思考过程（异步版本）"""
+
+    def __init__(self):
+        self._queue = asyncio.Queue()
+        self._done = False
+        self._answer_started = False
+
+    async def put_thought(self, content: str, elapsed: float) -> None:
+        """放入思考内容"""
+        await self._queue.put({"type": "thinking", "content": content, "elapsed": elapsed})
+
+    async def put_answer_chunk(self, chunk: str) -> None:
+        """放入答案内容块（用于token级别流式）"""
+        await self._queue.put({"type": "answer_chunk", "content": chunk})
+
+    async def put_answer(self, content: str) -> None:
+        """放入完整答案内容"""
+        await self._queue.put({"type": "answer", "content": content})
+
+    async def put_done(self) -> None:
+        """标记完成"""
+        self._done = True
+        await self._queue.put(None)  # 放入 None 作为完成标记
+
+    async def put_error(self, error: str) -> None:
+        """放入错误"""
+        await self._queue.put({"type": "error", "content": error})
+
+    async def get(self) -> dict:
+        """获取下一个内容块"""
+        if self._done and self._queue.empty():
+            return None
+        try:
+            return await asyncio.wait_for(self._queue.get(), timeout=0.5)
+        except asyncio.TimeoutError:
+            return None
+
+    def is_done(self) -> bool:
+        return self._done and self._queue.empty()
+
+
+class ThoughtStreamer:
+    """思考流式输出器 - 用于实时传递思考过程"""
+
+    def __init__(self):
+        self._queue = queue.Queue()
+        self._done = False
+
+    def put_thought(self, content: str, elapsed: float) -> None:
+        """放入思考内容"""
+        self._queue.put({"type": "thinking", "content": content, "elapsed": elapsed})
+
+    def put_answer_chunk(self, chunk: str) -> None:
+        """放入答案内容块（用于token级别流式）"""
+        self._queue.put({"type": "answer_chunk", "content": chunk})
+
+    def put_answer(self, content: str) -> None:
+        """放入完整答案内容"""
+        self._queue.put({"type": "answer", "content": content})
+
+    def put_done(self) -> None:
+        """标记完成"""
+        self._done = True
+
+    def put_error(self, error: str) -> None:
+        """放入错误"""
+        self._queue.put({"type": "error", "content": error})
+
+    def get(self, timeout: float = None):
+        """获取下一个内容块"""
+        if self._done and self._queue.empty():
+            return None
+        try:
+            return self._queue.get(timeout=timeout)
+        except queue.Empty:
+            return None
+
+    def is_done(self) -> bool:
+        return self._done and self._queue.empty()
+
+
 class AgentServicer:
     """Agent 服务实现"""
 
+    _instances = {}  # 存储每个请求的流式器
+    _thread_pool = None  # 线程池
+
     def __init__(self, config_path: str = "config/llm_config.yaml"):
+        self.config_path = config_path
         self.agent = ReActTravelAgent(config_path=config_path)
         logger.info("Agent 服务已初始化")
+
+    @classmethod
+    def get_thread_pool(cls):
+        """获取线程池，单例模式"""
+        if cls._thread_pool is None:
+            cls._thread_pool = futures.ThreadPoolExecutor(max_workers=10, thread_name_prefix="agent_worker")
+            logger.info("Agent 线程池已初始化")
+        return cls._thread_pool
+
+    @classmethod
+    def cleanup_instance(cls, request_id: str):
+        """安全清理实例，防止内存泄漏"""
+        if request_id in cls._instances:
+            del cls._instances[request_id]
+            logger.debug(f"[Stream-{request_id}] 实例已清理")
 
     def ProcessMessage(self, request, context):
         """处理消息（非流式）"""
@@ -42,40 +147,130 @@ class AgentServicer:
             return self._build_error_response(str(e), context)
 
     def StreamMessage(self, request, context) -> Iterator:
-        """处理消息（流式）"""
+        """处理消息（流式）- 使用线程和队列实现真正流式"""
+        import uuid
+        import time as time_module
+        request_id = str(uuid.uuid4())[:8]
+
+        logger.info(f"[Stream-{request_id}] 开始处理流式请求: {request.user_input[:50]}...")
+
         try:
             user_input = request.user_input
-            agent = self.agent
 
-            # 添加用户消息
-            agent.memory_manager.add_message('user', user_input)
+            # 发送思考开始信号
+            yield agent_pb2.StreamChunk(chunk_type="thinking_start", content="", is_last=False)
 
-            # 执行推理
-            result = agent.react_agent.run(user_input, {
-                'user_query': user_input,
-                'user_preference': agent.memory_manager.get_user_preference()
-            })
+            answer_started = False
+            chunk_count = 0
+            thinking_sent = False
 
-            history = result.get('history', [])
+            # 创建同步队列
+            answer_queue = queue.Queue()
+            thinking_queue = queue.Queue()
+            done_event = threading.Event()
+            error_holder = {"error": None}
 
-            # 发送思考过程
-            reasoning_text = agent._build_reasoning_text(history)
-            yield agent_pb2.StreamChunk(chunk_type="thinking", content=reasoning_text, is_last=False)
+            # 回调函数
+            def on_think(content, elapsed):
+                thinking_queue.put((content, elapsed))
 
-            # 发送答案
-            answer = agent._extract_answer(history)
-            yield agent_pb2.StreamChunk(chunk_type="answer", content=answer, is_last=False)
+            def on_answer_chunk(chunk):
+                answer_queue.put(chunk)
+
+            def on_done(result):
+                if not result.get("success"):
+                    error_holder["error"] = result.get("error", "未知错误")
+                done_event.set()
+
+            # 设置回调
+            self.agent.react_agent.set_think_stream_callback(on_think)
+
+            # 在线程中运行 agent
+            def run_agent():
+                try:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    loop.run_until_complete(
+                        self.agent.process_stream(
+                            user_input,
+                            answer_callback=on_answer_chunk,
+                            done_callback=on_done
+                        )
+                    )
+                    loop.close()
+                except Exception as e:
+                    logger.error(f"[Stream-{request_id}] agent 错误: {e}")
+                    error_holder["error"] = str(e)
+                    done_event.set()
+
+            # 启动 agent 线程
+            thread = threading.Thread(target=run_agent, daemon=True)
+            thread.start()
+
+            # 主循环：使用阻塞方式读取队列
+            # 这确保了当队列为空时会阻塞，直到 agent 放入新数据
+            while True:
+                # 首先检查思考队列（带超时）
+                try:
+                    content, elapsed = thinking_queue.get(timeout=0.05)
+                    thinking_text = f"[已思考 {elapsed:.1f}秒]\n\n{content}"
+                    yield agent_pb2.StreamChunk(chunk_type="thinking_chunk", content=thinking_text, is_last=False)
+                    thinking_sent = True
+                except queue.Empty:
+                    pass
+
+                # 检查答案队列
+                try:
+                    chunk = answer_queue.get(timeout=0.05)
+                    if not answer_started:
+                        if thinking_sent:
+                            yield agent_pb2.StreamChunk(chunk_type="thinking_end", content="", is_last=False)
+                        yield agent_pb2.StreamChunk(chunk_type="answer_start", content="", is_last=False)
+                        answer_started = True
+                    chunk_count += 1
+                    yield agent_pb2.StreamChunk(chunk_type="answer", content=chunk, is_last=False)
+                    time_module.sleep(0.02)
+                except queue.Empty:
+                    pass
+
+                # 检查是否完成
+                if done_event.is_set():
+                    # 继续读取剩余数据
+                    while not answer_queue.empty():
+                        try:
+                            chunk = answer_queue.get_nowait()
+                            if not answer_started:
+                                if thinking_sent:
+                                    yield agent_pb2.StreamChunk(chunk_type="thinking_end", content="", is_last=False)
+                                yield agent_pb2.StreamChunk(chunk_type="answer_start", content="", is_last=False)
+                                answer_started = True
+                            chunk_count += 1
+                            yield agent_pb2.StreamChunk(chunk_type="answer", content=chunk, is_last=False)
+                            time_module.sleep(0.02)
+                        except queue.Empty:
+                            break
+                    break
+
+            # 清理
+            self.agent.react_agent.set_think_stream_callback(None)
+
+            # 检查错误
+            if error_holder["error"]:
+                if not answer_started:
+                    yield agent_pb2.StreamChunk(chunk_type="thinking_end", content="", is_last=False)
+                yield agent_pb2.StreamChunk(chunk_type="error", content=error_holder["error"], is_last=True)
+                AgentServicer.cleanup_instance(request_id)
+                return
 
             # 发送完成信号
             yield agent_pb2.StreamChunk(chunk_type="done", content="", is_last=True)
+            AgentServicer.cleanup_instance(request_id)
+            logger.info(f"[Stream-{request_id}] 流式响应完成 (共 {chunk_count} 个分块)")
 
         except Exception as e:
-            logger.error(f"流式处理失败: {e}")
+            logger.error(f"[Stream-{request_id}] 流式处理异常: {e}")
             yield agent_pb2.StreamChunk(chunk_type="error", content=str(e), is_last=True)
-
-    def HealthCheck(self, request, context):
-        """健康检查"""
-        return agent_pb2.HealthResponse(healthy=True, version="1.0.0", status="running")
+            AgentServicer.cleanup_instance(request_id)
 
     def _build_response(self, result, context):
         """构建响应"""
@@ -127,9 +322,14 @@ class AgentServicer:
             error=error
         )
 
+    def HealthCheck(self, request, context):
+        """健康检查"""
+        return agent_pb2.HealthResponse(healthy=True, version="1.0.0", status="running")
+
 
 def serve(config_path: str = "config/config.json", port: int = 50051):
     """启动 gRPC 服务器"""
+    # 使用同步服务器
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
 
     # 添加服务

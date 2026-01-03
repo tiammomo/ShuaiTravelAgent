@@ -8,6 +8,7 @@ ReAct 旅游助手 Agent
 import json
 import sys
 import os
+import asyncio
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 
@@ -399,6 +400,171 @@ class ReActTravelAgent:
         import asyncio
         return asyncio.run(self.process(user_input))
 
+    async def process_stream(self, user_input: str, answer_callback=None, done_callback=None):
+        """流式处理用户输入，使用真正的token级别流式输出
+
+        Args:
+            user_input: 用户输入
+            answer_callback: 回答内容回调函数，接收 (token: str)
+            done_callback: 完成回调函数，接收 (result: Dict)
+        """
+        import logging
+        import time as time_module
+        logger = logging.getLogger(__name__)
+
+        logger.info(f"[Agent] 开始流式处理用户输入: {user_input[:50]}...")
+        start_time = time_module.time()
+
+        try:
+            self.memory_manager.add_message('user', user_input)
+
+            context = {
+                'user_query': user_input,
+                'user_preference': self.memory_manager.get_user_preference()
+            }
+
+            # 先运行 ReAct agent 获取思考历史
+            result = await self.react_agent.run(user_input, context)
+            logger.info(f"[Agent] ReAct 执行完成, success={result.get('success')}, steps={len(result.get('history', []))}")
+
+            if result.get('success'):
+                history = result.get('history', [])
+                reasoning_text = self._build_reasoning_text(history)
+                answer = self._extract_answer(history)
+
+                self.memory_manager.add_message('assistant', answer)
+
+                # 使用流式 LLM 调用生成答案，实现真正的 token 级别流式
+                # 构建消息
+                system_prompt = """你是一个专业的旅游助手。请根据用户的问题，提供详细、准确的旅游建议和规划。回答要简洁明了，条理清晰。"""
+                messages = [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_input}
+                ]
+
+                logger.info(f"[Agent] 开始流式生成答案...")
+
+                # 使用 LLM 客户端的流式方法
+                if hasattr(self.llm_client, 'chat_stream'):
+                    token_count = 0
+                    accumulated_answer = ""
+
+                    # 流式遍历 LLM 响应
+                    for token in self.llm_client.chat_stream(messages, temperature=0.7):
+                        token_count += 1
+                        accumulated_answer += token
+
+                        # 立即发送每个 token
+                        if answer_callback:
+                            answer_callback(token)
+
+                        # 极短延迟，确保 token 独立发送
+                        await asyncio.sleep(0.01)
+
+                    answer = accumulated_answer
+                    logger.info(f"[Agent] 流式生成完成, 共 {token_count} tokens")
+
+                else:
+                    # 回退到非流式
+                    logger.warning("[Agent] LLM 客户端不支持流式，使用批量发送")
+                    chunks = self._split_into_chunks(answer)
+                    for chunk in chunks:
+                        if answer_callback:
+                            answer_callback(chunk)
+                        await asyncio.sleep(0.02)
+
+                elapsed = time_module.time() - start_time
+                logger.info(f"[Agent] 总耗时: {elapsed:.2f}秒")
+
+                final_result = {
+                    "success": True,
+                    "answer": answer,
+                    "reasoning": {
+                        "text": reasoning_text,
+                        "total_steps": len(history),
+                        "tools_used": self._extract_tools_used(history)
+                    },
+                    "history": history
+                }
+
+                if done_callback:
+                    done_callback(final_result)
+
+                return final_result
+            else:
+                final_result = {
+                    "success": False,
+                    "error": result.get('error', '处理失败'),
+                    "reasoning": None,
+                    "history": result.get('history', [])
+                }
+                if done_callback:
+                    done_callback(final_result)
+                return final_result
+
+        except Exception as e:
+            logger.error(f"[Agent] 处理异常: {e}")
+            import traceback
+            traceback.print_exc()
+            error_result = {
+                "success": False,
+                "error": f"处理失败: {str(e)}",
+                "reasoning": None
+            }
+            if done_callback:
+                done_callback(error_result)
+            return error_result
+
+    def _split_into_chunks(self, text: str, chunk_size: int = 3) -> List[str]:
+        """将文本拆分成小块用于流式输出
+
+        Args:
+            text: 输入文本
+            chunk_size: 每个块的最大字符数（中文字符），默认3个
+        Returns:
+            文本块列表
+        """
+        if not text:
+            return []
+
+        chunks = []
+        i = 0
+
+        while i < len(text):
+            # 找到下一个断点（标点或换行）
+            chunk_end = min(i + 20, len(text))  # 最大20个字符
+
+            # 从后往前找合适的断点
+            for j in range(chunk_end, i, -1):
+                char = text[j - 1]
+                # 中文标点作为断点
+                if char in '。！？；：、\n':
+                    chunk_end = j
+                    break
+                # 英文标点也作为断点
+                if char in '.!?:;,' and j > i + 3:
+                    chunk_end = j
+                    break
+
+            # 确保至少返回一个字符
+            if chunk_end <= i:
+                chunk_end = min(i + 1, len(text))
+
+            chunk = text[i:chunk_end]
+            chunks.append(chunk)
+            i = chunk_end
+
+        # 如果分块太大，进一步拆分
+        final_chunks = []
+        for chunk in chunks:
+            while len(chunk) > 15:  # 如果块太大，按更小单位拆分
+                final_chunks.append(chunk[:8])  # 8个字符
+                chunk = chunk[8:]
+            if chunk:
+                final_chunks.append(chunk)
+
+        return final_chunks if final_chunks else [text]
+
     def _build_reasoning_text(self, history: List[Dict]) -> str:
         if not history:
             return "<thinking>\n[Timestamp: {timestamp}]\n\n[Intent Analysis]\nNo reasoning history available.\n\n[Context Evaluation]\nNo context available.\n\n[Response Planning]\nUnable to generate response.\n\n[Constraint Check]\nNo constraints checked.\n</thinking>".format(
@@ -487,43 +653,29 @@ class ReActTravelAgent:
         return tools
 
     def _extract_answer(self, history: List[Dict]) -> str:
+        """提取最终回答，优先使用LLM生成活泼的回答"""
+        # 收集所有工具执行结果
+        tool_results = []
+        has_successful_tools = False
+
         for step in reversed(history):
             action = step.get('action', {})
             if action.get('status') == 'SUCCESS':
-                action_result = step.get('evaluation', {})
+                has_successful_tools = True
                 result = action.get('result', {})
                 tool_name = action.get('tool_name', '')
+                if result:
+                    tool_results.append({
+                        'tool': tool_name,
+                        'result': result
+                    })
 
-                # Handle all tools that return useful results
-                if tool_name in ['generate_city_recommendation', 'generate_route_plan', 'llm_chat', 'query_attractions', 'generate_route']:
-                    if result:
-                        # Check for response/content fields
-                        response = result.get('response') or result.get('content', '')
-                        if response:
-                            if isinstance(response, dict):
-                                return json.dumps(response, ensure_ascii=False)
-                            return str(response)
+        # 如果有工具执行结果，使用LLM生成活泼的回答
+        if has_successful_tools:
+            return self._generate_answer(history)
 
-                        # For query_attractions, format the attractions data
-                        if tool_name == 'query_attractions' and isinstance(result, dict):
-                            # Check for data key (new format) or cities key (old format)
-                            if result.get('data') or result.get('cities'):
-                                return self._format_attractions_response(result)
-
-                        # For generate_route, return the route plan
-                        if tool_name == 'generate_route' and isinstance(result, dict):
-                            route_plan = result.get('route_plan', [])
-                            if route_plan:
-                                return json.dumps(result, ensure_ascii=False)
-
-                if action_result:
-                    response = action_result.get('response') or action_result.get('content', '')
-                    if response:
-                        if isinstance(response, dict):
-                            return json.dumps(response, ensure_ascii=False)
-                        return str(response)
-
-        return self._generate_answer(history)
+        # 否则返回默认消息
+        return '让我来帮你规划这次旅行吧！🎉'
 
     def _format_attractions_response(self, tool_result: Dict) -> str:
         """Format attractions data into a readable response."""
@@ -572,21 +724,137 @@ class ReActTravelAgent:
                         'result': action.get('result', {})
                     })
 
-            system_prompt = """你是一个专业的AI旅游助手。请基于工具调用结果，为用户提供完整、详细、专业的回答。"""
+            system_prompt = """你是一个超级热情、活泼的AI旅游小伙伴！
 
-            user_prompt = f"工具调用结果：\n{json.dumps(tool_results, ensure_ascii=False, indent=2)}\n\n请提供完整回答。"
+【任务】
+根据工具查询结果，生成结构化的旅游推荐信息。
+
+【说话风格】
+- 使用轻松活泼的语气，多用口语化表达
+- 适当使用emoji表情符号增添趣味
+- 用"小伙伴"、"亲"、"哇塞"等亲切称呼
+- 适当加入旅行的氛围感描写
+- 重点信息用**加粗**标记
+
+【输出格式】
+必须输出JSON格式，不要包含任何Markdown格式！JSON结构如下：
+{
+    "opening": "开场白，使用轻松活泼的语气",
+    "cities": [
+        {
+            "name": "城市名",
+            "emoji": "城市emoji",
+            "days": "推荐天数",
+            "budget": "预算描述",
+            "season": "最佳旅行季节",
+            "attractions": [
+                {"name": "景点名", "type": "景点类型", "ticket": "门票价格", "description": "简短描述"}
+            ]
+        }
+    ],
+    "tips": "旅行小贴士"
+}
+
+【重要】
+- 只输出JSON，不要输出任何Markdown语法
+- 确保JSON格式正确，可以被json.loads()解析
+- 每个城市至少推荐2-4个景点"""
+
+            user_prompt = f"""我想要规划一次旅行，这是我的查询结果：
+{json.dumps(tool_results, ensure_ascii=False, indent=2)}
+
+请只输出JSON格式的结果，不要有任何其他内容。"""
 
             result = self.llm_client.chat([
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
-            ])
+            ], temperature=0.7)
 
             if result.get('success'):
-                return result.get('content', '处理完成')
+                content = result.get('content', '')
+                # 尝试解析JSON
+                data = self._parse_json_response(content)
+                if data:
+                    return self._format_travel_response(data)
+                return content
             return '处理完成'
 
         except Exception as e:
             return f'生成回答失败：{str(e)}'
+
+    def _parse_json_response(self, content: str) -> dict:
+        """解析LLM返回的JSON响应"""
+        import re
+        try:
+            # 首先尝试直接解析
+            return json.loads(content)
+        except json.JSONDecodeError:
+            pass
+
+        # 尝试提取JSON块（可能有 markdown 代码块包裹）
+        json_match = re.search(r'```json\s*([\s\S]*?)\s*```', content)
+        if json_match:
+            try:
+                return json.loads(json_match.group(1))
+            except:
+                pass
+
+        # 尝试提取任何 JSON 对象
+        json_match = re.search(r'\{[\s\S]*\}', content)
+        if json_match:
+            try:
+                return json.loads(json_match.group())
+            except:
+                pass
+
+        return None
+
+    def _format_travel_response(self, data: dict) -> str:
+        """将结构化数据格式化为规范的Markdown"""
+        lines = []
+
+        # 开场白
+        opening = data.get('opening', '')
+        if opening:
+            lines.append(opening)
+            lines.append('')
+
+        # 城市推荐
+        for i, city in enumerate(data.get('cities', [])):
+            lines.append(f"## {city.get('emoji', '')} {city.get('name', '')}")
+            lines.append('')
+
+            # 城市基本信息
+            lines.append(f"- **推荐天数**：{city.get('days', '3天')}")
+            lines.append(f"- **预算**：约 **{city.get('budget', '待定')}/天**")
+            lines.append(f"- **最佳旅行季节**：{city.get('season', '四季皆宜')}")
+            lines.append('')
+
+            # 必游景点
+            lines.append('#### 必游景点：')
+            attractions = city.get('attractions', [])
+            for j, attr in enumerate(attractions, 1):
+                ticket = attr.get('ticket', '免费')
+                ticket_str = f"门票 **{ticket}**" if ticket not in ['免费', '0', 0] else '完全免费'
+                lines.append(f"{j}. **{attr.get('name', '未知景点')}**（{attr.get('type', '景点')}）- {ticket_str}")
+                desc = attr.get('description', '')
+                if desc:
+                    lines.append(f"   - {desc}")
+                lines.append('')
+
+            # 城市之间加空行（最后一个城市除外）
+            if i < len(data.get('cities', [])) - 1:
+                lines.append('')
+
+        # 旅行小贴士
+        tips = data.get('tips', '')
+        if tips:
+            lines.append('')
+            lines.append('☀️ 旅行小贴士')
+            lines.append('')
+            lines.append(tips)
+
+        return '\n'.join(lines)
 
     def get_conversation_history(self) -> list:
         return self.memory_manager.get_conversation_history()

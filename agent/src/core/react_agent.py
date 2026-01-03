@@ -350,7 +350,13 @@ class ThoughtEngine:
 可用工具：
 {chr(10).join(tool_descriptions)}
 
-请规划执行步骤，以JSON格式返回steps和reasoning。"""
+请规划执行步骤。返回JSON格式：
+{{
+  "reasoning": "选择理由",
+  "steps": [
+    {{"action": "工具名", "params": {{"参数名": "参数值"}}, "reasoning": "为什么选这个工具"}}
+  ]
+}}"""
 
         try:
             result = self.llm_client.chat([{"role": "system", "content": system_prompt}], temperature=0.3)
@@ -369,8 +375,8 @@ class ThoughtEngine:
                 thought = self._create_thought(ThoughtType.PLANNING, f"【执行计划】{plan.get('reasoning', '')}")
                 thought.decision = json.dumps([{
                     "step": s.get("step", i + 1),
-                    "action": s.get("tool", ""),
-                    "params": s.get("parameters", {})
+                    "action": s.get("action") or s.get("tool", ""),
+                    "params": s.get("params") or s.get("parameters", {})
                 } for i, s in enumerate(steps)])
                 thought.confidence = 0.9
                 return thought
@@ -531,8 +537,13 @@ class ReActAgent:
         self.action_history: List[Action] = []
         self.thought_history: List[Thought] = []
 
+        # 流式思考回调
         self._on_thought_callbacks: List[Callable] = []
         self._on_action_callbacks: List[Callable] = []
+
+        # 实时思考流相关
+        self._think_stream_callback = None  # 实时思考流回调
+        self._think_start_time = None  # 思考开始时间
 
     def register_tool(self, tool_info: ToolInfo, executor: Callable) -> bool:
         if tool_info.name in self.tool_registry._tools:
@@ -546,6 +557,10 @@ class ReActAgent:
 
     def add_action_callback(self, callback: Callable) -> None:
         self._on_action_callbacks.append(callback)
+
+    def set_think_stream_callback(self, callback: Callable[[str, float], None]) -> None:
+        """设置实时思考流回调 - callback(thought_content, elapsed_seconds)"""
+        self._think_stream_callback = callback
 
     def _notify_thought(self, thought: Thought) -> None:
         for callback in self._on_thought_callbacks:
@@ -568,13 +583,23 @@ class ReActAgent:
         self.state.history = []
 
         self.current_state = AgentState.REASONING
+        self._think_start_time = None  # 重置
 
         logger.info(f"开始执行任务: {task}")
 
         try:
             while self.state.current_step < self.max_steps:
+                # 首次思考时记录开始时间
+                if self._think_start_time is None:
+                    self._think_start_time = datetime.now()
+
                 observation = await self._observe()
                 thought = await self._think(observation)
+
+                # 实时流式思考内容
+                if self._think_stream_callback:
+                    elapsed = (datetime.now() - self._think_start_time).total_seconds()
+                    self._think_stream_callback(f"已思考（{elapsed:.1f}秒）\n\n{thought.content}", elapsed)
 
                 if self._should_stop(thought):
                     break

@@ -57,6 +57,7 @@ const ChatArea: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [reasoningExpanded, setReasoningExpanded] = useState<Record<string, boolean>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const stopRef = useRef(false); // 使用 ref 追踪停止状态，避免闭包问题
 
   const loadingDots = useLoadingDots(waitingForResponse);
 
@@ -155,23 +156,36 @@ const ChatArea: React.FC = () => {
       },
       {
         onChunk: (content) => {
+          console.log('[ChatArea] onChunk called, content length:', content.length);
           fullResponse += content;
-          setStreamingMessage((prev) => prev + content);
+          setStreamingMessage((prev) => {
+            const next = prev + content;
+            console.log('[ChatArea] streamingMessage updated, length:', next.length);
+            return next;
+          });
         },
         onReasoning: (content) => {
+          console.log('[ChatArea] onReasoning called, content length:', content.length);
           fullReasoning += content;
-          setStreamingReasoning((prev) => prev + content);
+          setStreamingReasoning((prev) => {
+            const next = prev + content;
+            console.log('[ChatArea] streamingReasoning updated, length:', next.length);
+            return next;
+          });
         },
         onReasoningStart: () => {
+          console.log('[ChatArea] onReasoningStart called, setting isThinking=true');
           setIsThinking(true);
           if (!thinkingStartTime) {
             setThinkingStartTime(Date.now());
           }
+          console.log('[ChatArea] isThinking should now be true');
         },
         onReasoningTimestamp: (timestamp) => {
           reasoningTimestamp = timestamp;
         },
         onReasoningEnd: () => {
+          console.log('[ChatArea] onReasoningEnd called, setting isThinking=false');
           setIsThinking(false);
         },
         onAnswerStart: () => {},
@@ -198,8 +212,9 @@ const ChatArea: React.FC = () => {
           setStreamingReasoning('');
           setWaitingForResponse(false);
           setIsStreaming(false);
+          stopRef.current = false; // 重置停止标志
         },
-        onStop: () => stopStreaming,
+        onStop: () => stopRef.current,
       }
     );
 
@@ -207,6 +222,7 @@ const ChatArea: React.FC = () => {
   };
 
   const handleStop = () => {
+    stopRef.current = true; // 使用 ref 设置停止标志
     setStopStreaming(true);
     setWaitingForResponse(false);
     setIsThinking(false);
@@ -238,92 +254,12 @@ const ChatArea: React.FC = () => {
           messages={messages}
           streamingMessage={streamingMessage}
           streamingReasoning={streamingReasoning}
+          isThinking={isThinking}
           reasoningExpanded={reasoningExpanded}
           onToggleReasoning={toggleReasoning}
         />
 
-        {isThinking && (
-          <div style={{
-            display: 'flex',
-            justifyContent: 'flex-start',
-            marginBottom: '16px',
-            alignItems: 'flex-start',
-            gap: '12px',
-            maxWidth: '100%',
-            padding: '0 16px',
-          }}>
-            {/* AI头像 */}
-            <div
-              style={{
-                width: '36px',
-                height: '36px',
-                borderRadius: '50%',
-                background: 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0,
-                boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-              }}
-            >
-              <RobotOutlined style={{ color: 'white', fontSize: '18px' }} />
-            </div>
-
-            <div style={{ flex: 1, maxWidth: 'calc(100% - 52px)' }}>
-              {/* 用户名 */}
-              <div style={{ display: 'flex', alignItems: 'center', marginBottom: '6px', gap: '8px' }}>
-                <span style={{ fontSize: '13px', fontWeight: 500, color: '#262730' }}>
-                  小帅助手
-                </span>
-                <span style={{ fontSize: '11px', opacity: 0.6, color: '#999' }}>
-                  Reasoning{loadingDots}
-                </span>
-              </div>
-
-              {/* 思考中动画卡片 */}
-              <Card
-                style={{
-                  background: '#fff',
-                  borderRadius: '12px',
-                  border: '1px solid #e8e8e8',
-                }}
-                styles={{ body: { padding: '14px 16px' } }}
-              >
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '12px',
-                  padding: '8px 0'
-                }}>
-                  {/* 脉冲动画圆点 */}
-                  <div style={{ display: 'flex', gap: '6px' }}>
-                    {[0, 1, 2].map((i) => (
-                      <span
-                        key={i}
-                        style={{
-                          display: 'inline-block',
-                          width: '8px',
-                          height: '8px',
-                          borderRadius: '50%',
-                          background: '#722ed1',
-                          animation: `pulse 1.4s ease-in-out ${i * 0.2}s infinite`,
-                        }}
-                      />
-                    ))}
-                  </div>
-                  <span style={{ fontSize: '13px', color: '#722ed1', fontWeight: 500 }}>
-                    Deep Reasoning
-                  </span>
-                  <span style={{ fontSize: '13px', color: '#999' }}>
-                    ({thinkingElapsed}s)
-                  </span>
-                </div>
-              </Card>
-            </div>
-          </div>
-        )}
-
+        {/* 错误显示 */}
         {error && (
           <div style={{ color: 'red', padding: '12px', background: '#fff2f0', borderRadius: '8px', marginBottom: '8px' }}>
             {error}

@@ -303,11 +303,15 @@ const MessageList: React.FC<Props> = ({
   messages,
   streamingMessage,
   streamingReasoning,
+  isThinking = false,
   reasoningExpanded = {},
   onToggleReasoning
 }) => {
   // 流式消息组件
-  const StreamingMessageItem: React.FC<{ content: string; reasoning?: string }> = ({ content, reasoning }) => {
+  const StreamingMessageItem: React.FC<{ content: string; reasoning?: string; isThinking?: boolean }> = ({ content, reasoning, isThinking: thinking }) => {
+    // 显示思考内容的条件：有 reasoning 或正在思考
+    const showReasoning = reasoning || thinking;
+
     return (
       <div
         style={{
@@ -345,7 +349,7 @@ const MessageList: React.FC<Props> = ({
               小帅助手
             </span>
             <span style={{ fontSize: '11px', opacity: 0.6, color: '#999' }}>
-              生成中...
+              {thinking ? '深度思考中...' : '生成中...'}
             </span>
           </div>
 
@@ -360,7 +364,7 @@ const MessageList: React.FC<Props> = ({
             styles={{ body: { padding: '14px 16px' } }}
           >
             {/* 流式思考过程 */}
-            {reasoning && (
+            {showReasoning && (
               <div
                 style={{
                   marginBottom: '8px',
@@ -375,13 +379,13 @@ const MessageList: React.FC<Props> = ({
                     display: 'flex',
                     alignItems: 'center',
                     padding: '8px 12px',
-                    background: '#f5f5f5',
+                    background: thinking ? '#f0f5ff' : '#f5f5f5',
                     userSelect: 'none'
                   }}
                 >
-                  <BulbOutlined style={{ color: '#722ed1', marginRight: '8px', fontSize: '14px' }} />
+                  <BulbOutlined style={{ color: thinking ? '#722ed1' : '#722ed1', marginRight: '8px', fontSize: '14px' }} />
                   <span style={{ fontSize: '13px', color: '#666', flex: 1 }}>
-                    Thinking...
+                    {thinking ? '深度思考中...' : 'Reasoning Process'}
                   </span>
                   {/* 动态加载点 */}
                   <span className="thinking-dots" style={{ color: '#999' }}>...</span>
@@ -394,23 +398,26 @@ const MessageList: React.FC<Props> = ({
                     fontSize: '12px',
                     lineHeight: '1.7',
                     whiteSpace: 'pre-wrap',
-                    maxHeight: '300px',
+                    maxHeight: thinking ? '200px' : '300px',
                     overflow: 'auto',
                     color: '#666'
                   }}
                 >
                   <ReactMarkdown components={markdownComponents}>
-                    {cleanContent(reasoning)}
+                    {cleanContent(reasoning || '')}
                   </ReactMarkdown>
                 </div>
               </div>
             )}
 
-            <div style={{ lineHeight: 1.7, fontSize: '14px' }}>
-              <ReactMarkdown components={markdownComponents}>
-                {cleanContent(content)}
-              </ReactMarkdown>
-            </div>
+            {/* 回答内容 */}
+            {(content || !thinking) && (
+              <div style={{ lineHeight: 1.7, fontSize: '14px' }}>
+                <ReactMarkdown components={markdownComponents}>
+                  {cleanContent(content)}
+                </ReactMarkdown>
+              </div>
+            )}
           </Card>
         </div>
       </div>
@@ -428,8 +435,13 @@ const MessageList: React.FC<Props> = ({
         />
       ))}
 
-      {streamingMessage && (
-        <StreamingMessageItem content={streamingMessage} reasoning={streamingReasoning} />
+      {/* 流式消息：当 isThinking 或有 streamingMessage 时显示 */}
+      {(isThinking || streamingMessage) && (
+        <StreamingMessageItem
+          content={streamingMessage || ''}
+          reasoning={streamingReasoning}
+          isThinking={isThinking}
+        />
       )}
     </div>
   );
