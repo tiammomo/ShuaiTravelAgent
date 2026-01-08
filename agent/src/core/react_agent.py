@@ -1294,21 +1294,23 @@ class ReActAgent:
         try:
             # ReAct 主循环
             while self.state.current_step < self.max_steps:
-                # 首次思考时记录开始时间
-                if self._think_start_time is None:
-                    self._think_start_time = datetime.now()
+                # 记录本步骤的开始时间
+                step_start_time = datetime.now()
 
                 # 观察 -> 思考 -> 行动 -> 评估
                 observation = await self._observe()
                 thought = await self._think(observation)
 
-                # 实时流式输出思考内容
+                # 实时流式输出思考内容（使用步骤耗时）
                 if self._think_stream_callback:
-                    elapsed = (datetime.now() - self._think_start_time).total_seconds()
+                    step_elapsed = (datetime.now() - step_start_time).total_seconds()
+                    logger.info(f"[ThinkStream] 步骤{self.state.current_step + 1}回调已触发, elapsed={step_elapsed:.2f}s")
                     self._think_stream_callback(
-                        f"已思考（{elapsed:.1f}秒）\n\n{thought.content}",
-                        elapsed
+                        f"步骤{self.state.current_step + 1}耗时: {step_elapsed:.1f}秒\n\n{thought.content}",
+                        step_elapsed
                     )
+                else:
+                    logger.warning(f"[ThinkStream] 步骤{self.state.current_step + 1}回调为None")
 
                 # 检查是否应该停止
                 if self._should_stop(thought):

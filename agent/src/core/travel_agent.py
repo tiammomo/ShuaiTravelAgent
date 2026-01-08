@@ -714,7 +714,7 @@ class ReActTravelAgent:
         import asyncio
         return asyncio.run(self.process(user_input))
 
-    async def process_stream(self, user_input: str, answer_callback=None, done_callback=None):
+    async def process_stream(self, user_input: str, answer_callback=None, done_callback=None, thinking_callback=None):
         """
         流式处理用户输入
 
@@ -728,6 +728,7 @@ class ReActTravelAgent:
             user_input: 用户输入
             answer_callback: 回答内容回调函数，接收单个 token (str)
             done_callback: 完成回调函数，接收最终结果 (Dict)
+            thinking_callback: 思考内容回调函数，接收思考内容 (str) 和耗时 (float)
 
         Returns:
             Dict: 最终处理结果
@@ -756,6 +757,10 @@ class ReActTravelAgent:
             }
 
             # 先运行 ReAct agent 获取思考历史
+            # 设置思考流式回调
+            if hasattr(self.react_agent, 'set_think_stream_callback') and thinking_callback:
+                self.react_agent.set_think_stream_callback(thinking_callback)
+
             result = await self.react_agent.run(user_input, context)
             logger.info(f"[Agent] ReAct 执行完成, success={result.get('success')}, steps={len(result.get('history', []))}")
 

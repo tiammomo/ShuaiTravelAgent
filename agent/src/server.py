@@ -367,7 +367,7 @@ class AgentServicer:
                 # 首先检查思考队列（带超时）
                 try:
                     content, elapsed = thinking_queue.get(timeout=0.05)
-                    thinking_text = f"[已思考 {elapsed:.1f}秒]\n\n{content}"
+                    thinking_text = f"{content}"
                     yield agent_pb2.StreamChunk(chunk_type="thinking_chunk", content=thinking_text, is_last=False)
                     thinking_sent = True
                 except queue.Empty:
