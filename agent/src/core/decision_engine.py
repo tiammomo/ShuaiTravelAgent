@@ -145,9 +145,13 @@ class DecisionEngine:
             SentimentType.HESITANT: ReplyStyle.WARM,
         }.get(intent.sentiment, ReplyStyle.WARM)
 
+        # 安全获取 sentiment
+        sentiment_value = intent.sentiment.value if hasattr(intent.sentiment, 'value') else str(intent.sentiment)
+        sentiment = SentimentType(sentiment_value) if sentiment_value in [e.value for e in SentimentType] else SentimentType.NEUTRAL
+
         style = style_manager.get_style_for_task(
             intent.intent.value,
-            SentimentType(intent.sentiment.value)
+            sentiment
         )
 
         return Decision(
@@ -191,10 +195,14 @@ class DecisionEngine:
                                 context: ContextInfo,
                                 force: bool = False) -> Decision:
         """生成最终答案"""
+        # 安全获取 sentiment
+        sentiment_value = intent.sentiment.value if hasattr(intent.sentiment, 'value') else str(intent.sentiment)
+        sentiment = SentimentType(sentiment_value) if sentiment_value in [e.value for e in SentimentType] else SentimentType.NEUTRAL
+
         # 选择风格
         style = style_manager.get_style_for_task(
             intent.intent.value,
-            SentimentType(intent.sentiment.value)
+            sentiment
         )
 
         # 根据意图类型生成内容

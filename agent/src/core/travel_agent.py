@@ -1141,7 +1141,9 @@ class ReActTravelAgent:
 
             # 获取风格配置
             if intent:
-                sentiment = SentimentType(intent.sentiment.value) if intent.sentiment else SentimentType.NEUTRAL
+                # 安全获取 sentiment
+                sentiment_value = intent.sentiment.value if hasattr(intent.sentiment, 'value') else str(intent.sentiment) if intent.sentiment else 'neutral'
+                sentiment = SentimentType(sentiment_value) if sentiment_value in [e.value for e in SentimentType] else SentimentType.NEUTRAL
                 style = style_manager.get_style_for_task(intent.intent.value, sentiment)
             else:
                 style = style_manager.get_style_for_task("general_chat", SentimentType.NEUTRAL)
@@ -1404,9 +1406,9 @@ class ReActTravelAgent:
 
         # 根据模式处理
         if mode == ChatMode.DIRECT:
-            result = await self._process_direct_mode(user_input, answer_callback, thinking_callback)
+            result = await self._process_direct_mode(user_input, answer_callback, done_callback, thinking_callback)
         elif mode == ChatMode.PLAN:
-            result = await self._process_plan_mode(user_input, context, answer_callback, thinking_callback)
+            result = await self._process_plan_mode(user_input, context, answer_callback, done_callback, thinking_callback)
         else:
             # 默认使用 ReAct 模式
             result = await self._process_react_mode(user_input, context, answer_callback, done_callback, thinking_callback)
@@ -1420,6 +1422,7 @@ class ReActTravelAgent:
         self,
         user_input: str,
         answer_callback=None,
+        done_callback=None,
         thinking_callback=None
     ) -> Dict[str, Any]:
         """
@@ -1465,7 +1468,7 @@ class ReActTravelAgent:
         # 添加助手回答到历史
         self.memory_manager.add_message('assistant', answer)
 
-        return {
+        result = {
             "success": True,
             "answer": answer,
             "mode": "direct",
@@ -1477,11 +1480,18 @@ class ReActTravelAgent:
             "history": []
         }
 
+        # 调用完成回调
+        if done_callback:
+            done_callback(result)
+
+        return result
+
     async def _process_plan_mode(
         self,
         user_input: str,
         context: Dict,
         answer_callback=None,
+        done_callback=None,
         thinking_callback=None
     ) -> Dict[str, Any]:
         """
@@ -1537,13 +1547,45 @@ class ReActTravelAgent:
 
         plan_content = plan_result.get('content', '{}')
         try:
-            # 尝试解析 JSON 计划
+            # 尝试直接解析 JSON
             plan_data = json_util.loads(plan_content)
+            logger.info(f"[Plan] 直接解析成功: {plan_data}")
         except json_util.JSONDecodeError:
             # 如果解析失败，尝试提取 JSON
+            logger.warning(f"[Plan] 直接解析失败，尝试提取: {plan_content[:200]}...")
             plan_data = self._extract_json_from_plan(plan_content)
+            logger.info(f"[Plan] 提取结果: {plan_data}")
 
         steps = plan_data.get('steps', [])
+        if not steps:
+            logger.warning(f"[Plan] steps 为空，原始内容: {plan_content[:500]}...")
+            # 尝试更宽松的解析
+            if 'steps' in plan_content:
+                import re
+                # 匹配整个 steps 数组中的每个步骤对象
+                step_pattern = re.compile(r'\{\s*"action"\s*:\s*"([^"]+)"\s*,\s*"params"\s*:\s*(\{[^}]*\})\s*,\s*"description"\s*:\s*"([^"]+)"\s*\}')
+                step_matches = step_pattern.findall(plan_content)
+
+                if step_matches:
+                    logger.info(f"[Plan] 找到步骤: {step_matches}")
+                    steps = []
+                    for action, params_str, description in step_matches:
+                        try:
+                            params = json_util.loads(params_str) if params_str else {}
+                        except:
+                            params = {}
+                        steps.append({
+                            "action": action,
+                            "params": params,
+                            "description": description
+                        })
+                else:
+                    # 尝试只提取 action
+                    step_items = re.findall(r'"action"\s*:\s*"([^"]+)"', plan_content)
+                    if step_items:
+                        logger.info(f"[Plan] 只找到 action: {step_items}")
+                        steps = [{"action": s, "params": {}, "description": s} for i, s in enumerate(step_items)]
+
         step_elapsed = (asyncio.get_event_loop().time() - plan_start.time()) if hasattr(plan_start, 'time') else 0
         step_times.append(("规划", step_elapsed))
 
@@ -1614,6 +1656,10 @@ class ReActTravelAgent:
             ], temperature=0.7)
             answer = final_result.get('content', '抱歉，处理过程中出现问题。')
 
+        # 通过 answer_callback 发送最终回答给前端
+        if answer_callback:
+            answer_callback(answer)
+
         self.memory_manager.add_message('assistant', answer)
 
         # 构建推理文本
@@ -1626,7 +1672,7 @@ class ReActTravelAgent:
 {chr(10).join([f"- {name}: {t:.2f}秒" for name, t in step_times])}
 </thinking>"""
 
-        return {
+        result = {
             "success": True,
             "answer": answer,
             "mode": "plan",
@@ -1639,9 +1685,16 @@ class ReActTravelAgent:
             "plan": steps
         }
 
+        # 调用完成回调
+        if done_callback:
+            done_callback(result)
+
+        return result
+
     def _extract_json_from_plan(self, content: str) -> Dict:
         """从计划文本中提取 JSON"""
         import re
+        import json as json_util
         json_match = re.search(r'\{[^{}]*\}', content)
         if json_match:
             try:

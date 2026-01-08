@@ -74,11 +74,13 @@ class IntentResult:
     original_query: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
+        # 安全获取 sentiment 值
+        sentiment_value = self.sentiment.value if hasattr(self.sentiment, 'value') else str(self.sentiment)
         return {
             "intent": self.intent.value,
             "sub_intent": self.sub_intent,
             "entities": self.entities,
-            "sentiment": self.sentiment.value,
+            "sentiment": sentiment_value,
             "confidence": self.confidence,
             "priority": self.priority,
             "missing_info": self.missing_info,

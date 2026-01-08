@@ -104,7 +104,8 @@
       "Bash(git push:*)",
       "Bash(git fetch:*)",
       "Bash(notepad:*)",
-      "Bash(D:codesanaconda3envsagentsScriptspip.exe install grpcio grpcio-tools protobuf pydantic-settings)"
+      "Bash(D:codesanaconda3envsagentsScriptspip.exe install grpcio grpcio-tools protobuf pydantic-settings)",
+      "Bash(tasklist:*)"
     ]
   }
 }

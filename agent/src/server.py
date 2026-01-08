@@ -47,7 +47,7 @@ from datetime import datetime
 
 from proto import agent_pb2, agent_pb2_grpc
 
-from core.travel_agent import ReActTravelAgent
+from core.travel_agent import ReActTravelAgent, ChatMode
 
 # 配置日志，使用 UTF-8 编码以支持中文
 import io
@@ -346,10 +346,15 @@ class AgentServicer:
                 try:
                     loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(loop)
+                    # 将字符串模式转换为 ChatMode 枚举
+                    try:
+                        mode_enum = ChatMode(mode) if isinstance(mode, str) else mode
+                    except ValueError:
+                        mode_enum = ChatMode.REACT
                     loop.run_until_complete(
                         self.agent.process_with_mode(
                             user_input,
-                            mode=self.agent.ChatMode(mode) if hasattr(self.agent, 'ChatMode') else mode,
+                            mode=mode_enum,
                             answer_callback=on_answer_chunk,
                             done_callback=on_done,
                             thinking_callback=on_think

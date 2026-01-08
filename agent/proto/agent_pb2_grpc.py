@@ -2,8 +2,12 @@
 """Client and server classes corresponding to protobuf-defined services."""
 import grpc
 import warnings
-
-from . import agent_pb2 as agent__pb2
+try:
+    # Python 3.11+ relative import
+    from . import agent_pb2 as agent__pb2
+except ImportError:
+    # Fallback for older Python versions
+    import agent_pb2 as agent__pb2
 
 GRPC_GENERATED_VERSION = '1.76.0'
 GRPC_VERSION = grpc.__version__
@@ -26,7 +30,12 @@ if _version_not_supported:
 
 
 class AgentServiceStub(object):
-    """Agent 服务定义
+    """=============================================================================
+    服务定义 (Service Definitions)
+    =============================================================================
+
+    Agent 服务
+    提供用户消息处理、流式响应和健康检查功能
     """
 
     def __init__(self, channel):
@@ -53,18 +62,49 @@ class AgentServiceStub(object):
 
 
 class AgentServiceServicer(object):
-    """Agent 服务定义
+    """=============================================================================
+    服务定义 (Service Definitions)
+    =============================================================================
+
+    Agent 服务
+    提供用户消息处理、流式响应和健康检查功能
     """
 
     def ProcessMessage(self, request, context):
-        """处理用户消息
+        """处理用户消息（同步模式）
+        接收用户输入，返回完整的处理结果
+
+        请求: MessageRequest - 包含会话ID、用户输入、模型ID等
+        响应: MessageResponse - 包含答案、推理过程、执行历史等
+
+        使用场景:
+        - 非流式响应需求
+        - 需要等待完整结果后统一返回
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
     def StreamMessage(self, request, context):
-        """流式处理用户消息
+        """流式处理用户消息（推荐）
+        接收用户输入，以流式方式返回思考过程和生成内容
+
+        请求: MessageRequest - 包含会话ID、用户输入、模型ID等
+        响应: stream StreamChunk - 流式返回的数据块
+
+        chunk_type 说明:
+        - "thinking_start": 思考开始
+        - "thinking_chunk": 思考内容块
+        - "thinking_end": 思考结束
+        - "answer_start": 答案开始
+        - "answer": 答案内容块
+        - "done": 完成
+        - "error": 错误
+
+        使用场景:
+        - 需要实时展示思考过程
+        - 需要实时展示生成内容
+        - SSE 流式响应后端
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -72,6 +112,10 @@ class AgentServiceServicer(object):
 
     def HealthCheck(self, request, context):
         """健康检查
+        检查 Agent 服务是否正常运行
+
+        请求: HealthRequest - 空请求
+        响应: HealthResponse - 服务状态信息
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -104,7 +148,12 @@ def add_AgentServiceServicer_to_server(servicer, server):
 
  # This class is part of an EXPERIMENTAL API.
 class AgentService(object):
-    """Agent 服务定义
+    """=============================================================================
+    服务定义 (Service Definitions)
+    =============================================================================
+
+    Agent 服务
+    提供用户消息处理、流式响应和健康检查功能
     """
 
     @staticmethod

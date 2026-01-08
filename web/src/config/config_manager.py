@@ -138,10 +138,34 @@ class ConfigManager:
             return list(cities.keys())
         return list(self.config.get('travel_knowledge', {}).get('cities', {}).keys())
 
+    def _is_model_active(self, config: Dict[str, Any]) -> bool:
+        """检查模型配置是否已激活（拥有有效的API密钥）"""
+        api_key = config.get('api_key', '')
+
+        if not api_key:
+            return False
+
+        if api_key.startswith('${') and api_key.endswith('}'):
+            var_name = api_key[2:-1]
+            return bool(os.environ.get(var_name))
+
+        if 'YOUR_' in api_key.upper():
+            return False
+
+        return True
+
     def get_available_models(self) -> List[Dict[str, Any]]:
-        """获取可用模型列表"""
+        """
+        获取已激活的模型列表
+
+        仅返回已配置有效API密钥的模型，过滤掉占位符配置。
+        用于前端模型选择器，确保只显示可用的模型选项。
+        """
         models = []
         for model_id, config in self.models_config.items():
+            if not self._is_model_active(config):
+                continue
+
             provider_type = config.get('provider', 'openai')
             model_name = config.get('model', model_id)
             display_name = config.get('name', model_id)

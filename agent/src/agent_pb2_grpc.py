@@ -2,8 +2,12 @@
 """Client and server classes corresponding to protobuf-defined services."""
 import grpc
 import warnings
-
-import agent_pb2 as agent__pb2
+try:
+    # Python 3.11+ relative import
+    from . import agent_pb2 as agent__pb2
+except ImportError:
+    # Fallback for older Python versions
+    import agent_pb2 as agent__pb2
 
 GRPC_GENERATED_VERSION = '1.76.0'
 GRPC_VERSION = grpc.__version__

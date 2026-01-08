@@ -389,15 +389,56 @@ class ConfigManager:
         """
         return list(self.travel_knowledge['cities'].keys())
 
+    def _is_model_active(self, config: Dict[str, Any]) -> bool:
+        """
+        检查模型配置是否已激活（拥有有效的API密钥）
+
+        只有拥有有效API密钥的模型才会被返回给前端。
+        以下情况视为无效/占位符配置：
+        - api_key 为空
+        - api_key 包含 "YOUR_" 前缀（占位符）
+        - api_key 是环境变量占位符 ${...} 但未设置
+
+        Args:
+            config: 模型配置字典
+
+        Returns:
+            bool: True 表示模型已激活可用
+        """
+        api_key = config.get('api_key', '')
+
+        # 空密钥无效
+        if not api_key:
+            return False
+
+        # 检查是否是环境变量占位符
+        if api_key.startswith('${') and api_key.endswith('}'):
+            # 占位符格式，检查环境变量是否已设置
+            var_name = api_key[2:-1]
+            return bool(os.environ.get(var_name))
+
+        # 检查是否是占位符文本
+        if 'YOUR_' in api_key.upper():
+            return False
+
+        return True
+
     def get_available_models(self) -> List[Dict[str, Any]]:
         """
-        获取可用模型列表
+        获取已激活的模型列表
+
+        仅返回已配置有效API密钥的模型，过滤掉占位符配置。
+        用于前端模型选择器，确保只显示可用的模型选项。
 
         Returns:
             List[Dict]: 模型信息列表，每个包含model_id、name、provider、model
         """
         models = []
         for model_id, config in self.models_config.items():
+            # 只返回已激活的模型（拥有有效API密钥）
+            if not self._is_model_active(config):
+                continue
+
             provider_type = config.get('provider', 'openai')
             model_name = config.get('model', model_id)
             display_name = config.get('name', model_id)

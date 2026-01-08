@@ -823,12 +823,15 @@ class ThoughtEngine:
 
         type_name = intent_type_map.get(intent_result.intent, "一般对话")
 
+        # 安全获取 sentiment 值
+        sentiment_value = intent_result.sentiment.value if hasattr(intent_result.sentiment, 'value') else str(intent_result.sentiment)
+
         # 构建分析内容
         content_parts = [
             f"【任务分析】用户输入：「{task}」",
             f"【意图识别】任务类型={type_name}",
             f"【意图置信度】{intent_result.confidence:.2f}",
-            f"【用户情感】{intent_result.sentiment.value}",
+            f"【用户情感】{sentiment_value}",
             f"【提取实体】{intent_result.entities}"
         ]
 

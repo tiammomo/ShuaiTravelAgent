@@ -4,7 +4,6 @@ import {
   PlusOutlined,
   DeleteOutlined,
   CheckCircleOutlined,
-  ApiOutlined,
   EditOutlined,
   RobotOutlined,
 } from '@ant-design/icons';
@@ -17,8 +16,6 @@ const { Option } = Select;
 const Sidebar: React.FC = () => {
   const { message } = App.useApp();
   const {
-    config,
-    setConfig,
     currentSessionId,
     switchSession,
     availableModels,
@@ -30,7 +27,6 @@ const Sidebar: React.FC = () => {
     clearMessages,
   } = useAppContext();
 
-  const [apiBase, setApiBase] = useState(config.apiBase);
   const [loading, setLoading] = useState(false);
   const [switchingModel, setSwitchingModel] = useState(false);
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
@@ -101,15 +97,6 @@ const Sidebar: React.FC = () => {
   };
 
   // 健康检查
-  const handleHealthCheck = async () => {
-    try {
-      const data = await apiService.checkHealth();
-      message.success(`连接成功\n\nAgent: ${data.agent}\n版本: ${data.version}`);
-    } catch (error) {
-      message.error('无法连接到服务器');
-    }
-  };
-
   // 清空对话
   const handleClearChat = async () => {
     if (!currentSessionId) {
@@ -168,22 +155,6 @@ const Sidebar: React.FC = () => {
             ))}
           </Select>
         )}
-      </Card>
-
-      {/* API配置 */}
-      <Card title="⚙️ 系统配置" size="small" style={{ marginBottom: '16px' }}>
-        <Space orientation="vertical" style={{ width: '100%' }}>
-          <Input
-            value={apiBase}
-            onChange={(e) => setApiBase(e.target.value)}
-            onBlur={() => setConfig({ apiBase })}
-            placeholder="API地址"
-            prefix={<ApiOutlined />}
-          />
-          <Button onClick={handleHealthCheck} block>
-            🔍 检查连接
-          </Button>
-        </Space>
       </Card>
 
       {/* 会话管理 */}

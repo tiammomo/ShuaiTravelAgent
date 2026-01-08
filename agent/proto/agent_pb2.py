@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0b\x61gent.proto\x12\x05\x61gent\"Z\n\x0eMessageRequest\x12\x12\n\nsession_id\x18\x01 \x01(\t\x12\x12\n\nuser_input\x18\x02 \x01(\t\x12\x10\n\x08model_id\x18\x03 \x01(\t\x12\x0e\n\x06stream\x18\x04 \x01(\x08\"\x8f\x01\n\x0fMessageResponse\x12\x0f\n\x07success\x18\x01 \x01(\x08\x12\x0e\n\x06\x61nswer\x18\x02 \x01(\t\x12\'\n\treasoning\x18\x03 \x01(\x0b\x32\x14.agent.ReasoningInfo\x12\r\n\x05\x65rror\x18\x04 \x01(\t\x12#\n\x07history\x18\x05 \x03(\x0b\x32\x12.agent.HistoryStep\"F\n\rReasoningInfo\x12\x0c\n\x04text\x18\x01 \x01(\t\x12\x13\n\x0btotal_steps\x18\x02 \x01(\x05\x12\x12\n\ntools_used\x18\x03 \x03(\t\"\xa1\x01\n\x0bHistoryStep\x12\x0c\n\x04step\x18\x01 \x01(\x05\x12#\n\x07thought\x18\x02 \x01(\x0b\x32\x12.agent.ThoughtInfo\x12!\n\x06\x61\x63tion\x18\x03 \x01(\x0b\x32\x11.agent.ActionInfo\x12)\n\nevaluation\x18\x04 \x01(\x0b\x32\x15.agent.EvaluationInfo\x12\x11\n\ttimestamp\x18\x05 \x01(\t\"^\n\x0bThoughtInfo\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0c\n\x04type\x18\x02 \x01(\t\x12\x0f\n\x07\x63ontent\x18\x03 \x01(\t\x12\x12\n\nconfidence\x18\x04 \x01(\x02\x12\x10\n\x08\x64\x65\x63ision\x18\x05 \x01(\t\"\xd6\x01\n\nActionInfo\x12\n\n\x02id\x18\x01 \x01(\t\x12\x11\n\ttool_name\x18\x02 \x01(\t\x12\x35\n\nparameters\x18\x03 \x03(\x0b\x32!.agent.ActionInfo.ParametersEntry\x12\x0e\n\x06status\x18\x04 \x01(\t\x12\x10\n\x08\x64uration\x18\x05 \x01(\x05\x12\x0e\n\x06result\x18\x06 \x01(\t\x12\r\n\x05\x65rror\x18\x07 \x01(\t\x1a\x31\n\x0fParametersEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"G\n\x0e\x45valuationInfo\x12\x0f\n\x07success\x18\x01 \x01(\x08\x12\x10\n\x08\x64uration\x18\x02 \x01(\x05\x12\x12\n\nhas_result\x18\x03 \x01(\x08\"C\n\x0bStreamChunk\x12\x12\n\nchunk_type\x18\x01 \x01(\t\x12\x0f\n\x07\x63ontent\x18\x02 \x01(\t\x12\x0f\n\x07is_last\x18\x03 \x01(\x08\"\x0f\n\rHealthRequest\"B\n\x0eHealthResponse\x12\x0f\n\x07healthy\x18\x01 \x01(\x08\x12\x0f\n\x07version\x18\x02 \x01(\t\x12\x0e\n\x06status\x18\x03 \x01(\t2\xc9\x01\n\x0c\x41gentService\x12?\n\x0eProcessMessage\x12\x15.agent.MessageRequest\x1a\x16.agent.MessageResponse\x12<\n\rStreamMessage\x12\x15.agent.MessageRequest\x1a\x12.agent.StreamChunk0\x01\x12:\n\x0bHealthCheck\x12\x14.agent.HealthRequest\x1a\x15.agent.HealthResponseb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0b\x61gent.proto\x12\x05\x61gent\"h\n\x0eMessageRequest\x12\x12\n\nsession_id\x18\x01 \x01(\t\x12\x12\n\nuser_input\x18\x02 \x01(\t\x12\x10\n\x08model_id\x18\x03 \x01(\t\x12\x0e\n\x06stream\x18\x04 \x01(\x08\x12\x0c\n\x04mode\x18\x05 \x01(\t\"\x8f\x01\n\x0fMessageResponse\x12\x0f\n\x07success\x18\x01 \x01(\x08\x12\x0e\n\x06\x61nswer\x18\x02 \x01(\t\x12\'\n\treasoning\x18\x03 \x01(\x0b\x32\x14.agent.ReasoningInfo\x12\r\n\x05\x65rror\x18\x04 \x01(\t\x12#\n\x07history\x18\x05 \x03(\x0b\x32\x12.agent.HistoryStep\"F\n\rReasoningInfo\x12\x0c\n\x04text\x18\x01 \x01(\t\x12\x13\n\x0btotal_steps\x18\x02 \x01(\x05\x12\x12\n\ntools_used\x18\x03 \x03(\t\"\xa1\x01\n\x0bHistoryStep\x12\x0c\n\x04step\x18\x01 \x01(\x05\x12#\n\x07thought\x18\x02 \x01(\x0b\x32\x12.agent.ThoughtInfo\x12!\n\x06\x61\x63tion\x18\x03 \x01(\x0b\x32\x11.agent.ActionInfo\x12)\n\nevaluation\x18\x04 \x01(\x0b\x32\x15.agent.EvaluationInfo\x12\x11\n\ttimestamp\x18\x05 \x01(\t\"^\n\x0bThoughtInfo\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0c\n\x04type\x18\x02 \x01(\t\x12\x0f\n\x07\x63ontent\x18\x03 \x01(\t\x12\x12\n\nconfidence\x18\x04 \x01(\x02\x12\x10\n\x08\x64\x65\x63ision\x18\x05 \x01(\t\"\xd6\x01\n\nActionInfo\x12\n\n\x02id\x18\x01 \x01(\t\x12\x11\n\ttool_name\x18\x02 \x01(\t\x12\x35\n\nparameters\x18\x03 \x03(\x0b\x32!.agent.ActionInfo.ParametersEntry\x12\x0e\n\x06status\x18\x04 \x01(\t\x12\x10\n\x08\x64uration\x18\x05 \x01(\x05\x12\x0e\n\x06result\x18\x06 \x01(\t\x12\r\n\x05\x65rror\x18\x07 \x01(\t\x1a\x31\n\x0fParametersEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"G\n\x0e\x45valuationInfo\x12\x0f\n\x07success\x18\x01 \x01(\x08\x12\x10\n\x08\x64uration\x18\x02 \x01(\x05\x12\x12\n\nhas_result\x18\x03 \x01(\x08\"C\n\x0bStreamChunk\x12\x12\n\nchunk_type\x18\x01 \x01(\t\x12\x0f\n\x07\x63ontent\x18\x02 \x01(\t\x12\x0f\n\x07is_last\x18\x03 \x01(\x08\"\x0f\n\rHealthRequest\"B\n\x0eHealthResponse\x12\x0f\n\x07healthy\x18\x01 \x01(\x08\x12\x0f\n\x07version\x18\x02 \x01(\t\x12\x0e\n\x06status\x18\x03 \x01(\t2\xc9\x01\n\x0c\x41gentService\x12?\n\x0eProcessMessage\x12\x15.agent.MessageRequest\x1a\x16.agent.MessageResponse\x12<\n\rStreamMessage\x12\x15.agent.MessageRequest\x1a\x12.agent.StreamChunk0\x01\x12:\n\x0bHealthCheck\x12\x14.agent.HealthRequest\x1a\x15.agent.HealthResponseb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -34,27 +34,27 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_ACTIONINFO_PARAMETERSENTRY']._loaded_options = None
   _globals['_ACTIONINFO_PARAMETERSENTRY']._serialized_options = b'8\001'
   _globals['_MESSAGEREQUEST']._serialized_start=22
-  _globals['_MESSAGEREQUEST']._serialized_end=112
-  _globals['_MESSAGERESPONSE']._serialized_start=115
-  _globals['_MESSAGERESPONSE']._serialized_end=258
-  _globals['_REASONINGINFO']._serialized_start=260
-  _globals['_REASONINGINFO']._serialized_end=330
-  _globals['_HISTORYSTEP']._serialized_start=333
-  _globals['_HISTORYSTEP']._serialized_end=494
-  _globals['_THOUGHTINFO']._serialized_start=496
-  _globals['_THOUGHTINFO']._serialized_end=590
-  _globals['_ACTIONINFO']._serialized_start=593
-  _globals['_ACTIONINFO']._serialized_end=807
-  _globals['_ACTIONINFO_PARAMETERSENTRY']._serialized_start=758
-  _globals['_ACTIONINFO_PARAMETERSENTRY']._serialized_end=807
-  _globals['_EVALUATIONINFO']._serialized_start=809
-  _globals['_EVALUATIONINFO']._serialized_end=880
-  _globals['_STREAMCHUNK']._serialized_start=882
-  _globals['_STREAMCHUNK']._serialized_end=949
-  _globals['_HEALTHREQUEST']._serialized_start=951
-  _globals['_HEALTHREQUEST']._serialized_end=966
-  _globals['_HEALTHRESPONSE']._serialized_start=968
-  _globals['_HEALTHRESPONSE']._serialized_end=1034
-  _globals['_AGENTSERVICE']._serialized_start=1037
-  _globals['_AGENTSERVICE']._serialized_end=1238
+  _globals['_MESSAGEREQUEST']._serialized_end=126
+  _globals['_MESSAGERESPONSE']._serialized_start=129
+  _globals['_MESSAGERESPONSE']._serialized_end=272
+  _globals['_REASONINGINFO']._serialized_start=274
+  _globals['_REASONINGINFO']._serialized_end=344
+  _globals['_HISTORYSTEP']._serialized_start=347
+  _globals['_HISTORYSTEP']._serialized_end=508
+  _globals['_THOUGHTINFO']._serialized_start=510
+  _globals['_THOUGHTINFO']._serialized_end=604
+  _globals['_ACTIONINFO']._serialized_start=607
+  _globals['_ACTIONINFO']._serialized_end=821
+  _globals['_ACTIONINFO_PARAMETERSENTRY']._serialized_start=772
+  _globals['_ACTIONINFO_PARAMETERSENTRY']._serialized_end=821
+  _globals['_EVALUATIONINFO']._serialized_start=823
+  _globals['_EVALUATIONINFO']._serialized_end=894
+  _globals['_STREAMCHUNK']._serialized_start=896
+  _globals['_STREAMCHUNK']._serialized_end=963
+  _globals['_HEALTHREQUEST']._serialized_start=965
+  _globals['_HEALTHREQUEST']._serialized_end=980
+  _globals['_HEALTHRESPONSE']._serialized_start=982
+  _globals['_HEALTHRESPONSE']._serialized_end=1048
+  _globals['_AGENTSERVICE']._serialized_start=1051
+  _globals['_AGENTSERVICE']._serialized_end=1252
 # @@protoc_insertion_point(module_scope)
