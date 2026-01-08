@@ -45,6 +45,14 @@ from datetime import datetime
 from collections import deque
 import logging
 
+# 导入新的意图识别模块
+try:
+    from core.intent_recognizer import intent_recognizer, IntentRecognizer, IntentResult, IntentType
+except ImportError:
+    intent_recognizer = None
+    IntentResult = None
+    IntentType = None
+
 # 配置日志级别，确保在生产环境中可以灵活调整
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -667,8 +675,25 @@ class ThoughtEngine:
         try:
             result = self.llm_client.chat(messages, temperature=0.3)
             if result.get("success"):
-                content = extract_json_from_markdown(result.get("content", ""))
-                analysis = json.loads(content)
+                raw_content = result.get("content", "")
+                logger.debug(f"[ThoughtEngine] LLM原始响应: {raw_content[:200]}...")
+                content = extract_json_from_markdown(raw_content)
+                logger.debug(f"[ThoughtEngine] 提取JSON: {content[:200]}...")
+
+                # 尝试解析 JSON
+                try:
+                    analysis = json.loads(content)
+                except json.JSONDecodeError:
+                    logger.warning(f"[ThoughtEngine] JSON解析失败，尝试修复: {content[:100]}...")
+                    # 尝试修复常见的 JSON 问题
+                    content_fixed = content.replace("'", '"')
+                    analysis = json.loads(content_fixed)
+
+                # 确保 analysis 是字典
+                if not isinstance(analysis, dict):
+                    logger.error(f"[ThoughtEngine] LLM返回类型错误: {type(analysis)}, 内容: {analysis}")
+                    raise ValueError(f"Expected dict, got {type(analysis)}")
+
                 logger.info(f"[ThoughtEngine] LLM分析结果: {analysis}")
 
                 # 创建分析型思考
@@ -679,8 +704,8 @@ class ThoughtEngine:
                 # 将工具列表转换为决策格式
                 thought.decision = json.dumps([{
                     "step": i + 1,
-                    "action": tool.get("name", ""),
-                    "params": tool.get("parameters", {})
+                    "action": tool.get("name") if isinstance(tool, dict) else str(tool),
+                    "params": tool.get("parameters", {}) if isinstance(tool, dict) else {}
                 } for i, tool in enumerate(analysis.get("tools", []))])
                 thought.confidence = analysis.get("confidence", 0.85)
                 return thought
@@ -693,7 +718,48 @@ class ThoughtEngine:
         """
         使用规则分析任务
 
-        当 LLM 不可用时，通过关键词匹配判断任务类型。
+        优先尝试使用 LLM 进行意图识别，如果不可用则回退到规则匹配。
+
+        Args:
+            task: 用户任务描述
+            context: 上下文信息
+
+        Returns:
+            Thought: 分析结果
+        """
+        # 尝试使用新的意图识别模块
+        if intent_recognizer:
+            try:
+                import asyncio
+                # 如果是异步方法
+                if hasattr(intent_recognizer, '_recognize_with_llm'):
+                    # 使用同步方法或创建事件循环
+                    try:
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                        intent_result = loop.run_until_complete(
+                            intent_recognizer.recognize(task, context)
+                        )
+                        loop.close()
+
+                        # 类型检查
+                        from core.intent_recognizer import IntentResult
+                        if not isinstance(intent_result, IntentResult):
+                            logger.warning(f"意图识别返回类型错误: {type(intent_result)}, 回退到规则匹配")
+                            return self._analyze_task_with_keywords(task, context)
+
+                        return self._convert_intent_to_thought(intent_result, task)
+                    except Exception as e:
+                        logger.warning(f"异步意图识别失败: {e}, 回退到规则匹配")
+            except Exception as e:
+                logger.warning(f"意图识别模块使用失败: {e}")
+
+        # 回退到原始规则匹配
+        return self._analyze_task_with_keywords(task, context)
+
+    def _analyze_task_with_keywords(self, task: str, context: Dict[str, Any]) -> Thought:
+        """
+        使用关键词匹配分析任务
 
         Args:
             task: 用户任务描述
@@ -728,6 +794,58 @@ class ThoughtEngine:
         content = f"【任务分析】用户输入：「{task}」\n【意图识别】任务类型={task_type_cn}\n【提取信息】{entities}"
         thought = self._create_thought(ThoughtType.ANALYSIS, content)
         thought.confidence = 0.7
+        return thought
+
+    def _convert_intent_to_thought(self, intent_result: IntentResult, task: str) -> Thought:
+        """
+        将 IntentResult 转换为 Thought
+
+        Args:
+            intent_result: 意图识别结果
+            task: 用户任务描述
+
+        Returns:
+            Thought: 思考结果
+        """
+        # 意图类型映射
+        intent_type_map = {
+            IntentType.CITY_RECOMMENDATION: "城市推荐",
+            IntentType.ATTRACTION_QUERY: "景点查询",
+            IntentType.ROUTE_PLANNING: "路线规划",
+            IntentType.ITINERARY_QUERY: "行程查询",
+            IntentType.BUDGET_QUERY: "预算咨询",
+            IntentType.FOOD_RECOMMENDATION: "美食推荐",
+            IntentType.ACCOMMODATION: "住宿咨询",
+            IntentType.TRANSPORTATION: "交通咨询",
+            IntentType.TRAVEL_PLANNING: "旅行规划",
+            IntentType.GENERAL_CHAT: "一般对话",
+        }
+
+        type_name = intent_type_map.get(intent_result.intent, "一般对话")
+
+        # 构建分析内容
+        content_parts = [
+            f"【任务分析】用户输入：「{task}」",
+            f"【意图识别】任务类型={type_name}",
+            f"【意图置信度】{intent_result.confidence:.2f}",
+            f"【用户情感】{intent_result.sentiment.value}",
+            f"【提取实体】{intent_result.entities}"
+        ]
+
+        if intent_result.missing_info:
+            content_parts.append(f"【缺失信息】{intent_result.missing_info}")
+
+        content = "\n".join(content_parts)
+        thought = self._create_thought(ThoughtType.ANALYSIS, content)
+        thought.confidence = intent_result.confidence
+
+        # 将决策信息存入 thought
+        if intent_result.needs_more_info():
+            thought.decision = json.dumps({
+                "action": "ask_clarification",
+                "missing_info": intent_result.missing_info
+            })
+
         return thought
 
     def plan_actions(self, task: str, tools: List[ToolInfo],

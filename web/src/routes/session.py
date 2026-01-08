@@ -74,7 +74,19 @@ def get_session_service() -> SessionService:
     return container.resolve('SessionService')
 
 
-@router.post("/session/new")
+@router.post(
+    "/session/new",
+    responses={
+        200: {
+            "description": "创建成功",
+            "content": {"application/json": {"example": {"success": True, "session_id": "550e8400-e29b-41d4-a716-446655440000", "name": None}}}
+        },
+        500: {
+            "description": "创建失败",
+            "content": {"application/json": {"example": {"success": False, "error": "创建会话失败"}}}
+        }
+    }
+)
 async def create_session(name: Optional[str] = None):
     """
     创建新会话
@@ -94,7 +106,15 @@ async def create_session(name: Optional[str] = None):
     return result
 
 
-@router.get("/sessions")
+@router.get(
+    "/sessions",
+    responses={
+        200: {
+            "description": "获取成功",
+            "content": {"application/json": {"example": {"success": True, "sessions": [{"session_id": "xxx", "name": "北京游", "message_count": 5, "last_active": "2024-01-08T12:00:00"}], "total": 1}}}
+        }
+    }
+)
 async def list_sessions(include_empty: bool = False):
     """
     列出所有会话
@@ -113,7 +133,14 @@ async def list_sessions(include_empty: bool = False):
     return await service.list_sessions(include_empty=include_empty)
 
 
-@router.delete("/session/{session_id}")
+@router.delete(
+    "/session/{session_id}",
+    responses={
+        200: {"description": "删除成功", "content": {"application/json": {"example": {"success": True}}}},
+        404: {"description": "会话不存在", "content": {"application/json": {"example": {"detail": "会话不存在"}}}},
+        500: {"description": "删除失败", "content": {"application/json": {"example": {"detail": "删除失败"}}}}
+    }
+)
 async def delete_session(session_id: str):
     """
     删除会话
@@ -134,7 +161,13 @@ async def delete_session(session_id: str):
     return result
 
 
-@router.put("/session/{session_id}/name")
+@router.put(
+    "/session/{session_id}/name",
+    responses={
+        200: {"description": "更新成功", "content": {"application/json": {"example": {"success": True, "name": "新的名称"}}}},
+        404: {"description": "会话不存在", "content": {"application/json": {"example": {"detail": "会话不存在"}}}}
+    }
+)
 async def update_session_name(session_id: str, request: UpdateNameRequest):
     """
     更新会话名称

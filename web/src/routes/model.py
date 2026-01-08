@@ -57,7 +57,16 @@ def set_config_manager(config_manager):
     _config_manager = config_manager
 
 
-@router.get("/models")
+@router.get(
+    "/models",
+    responses={
+        200: {
+            "description": "获取成功",
+            "content": {"application/json": {"example": {"success": True, "models": [{"model_id": "gpt-4o-mini", "name": "GPT-4o Mini", "provider": "openai"}, {"model_id": "gpt-4o", "name": "GPT-4o", "provider": "openai"}]}}}
+        },
+        500: {"description": "获取失败", "content": {"application/json": {"example": {"success": False, "error": "无法获取模型列表"}}}}
+    }
+)
 async def list_models():
     """
     列出所有可用模型
@@ -104,7 +113,17 @@ async def list_models():
     }
 
 
-@router.get("/models/{model_id}")
+@router.get(
+    "/models/{model_id}",
+    responses={
+        200: {
+            "description": "获取成功",
+            "content": {"application/json": {"example": {"success": True, "model_id": "gpt-4o-mini", "name": "GPT-4o Mini", "provider": "openai", "model": "gpt-4o-mini", "temperature": 0.7}}}
+        },
+        404: {"description": "模型不存在", "content": {"application/json": {"example": {"success": False, "error": "Model not found"}}}},
+        500: {"description": "获取失败", "content": {"application/json": {"example": {"success": False, "error": "无法获取模型配置"}}}}
+    }
+)
 async def get_model(model_id: str):
     """
     获取模型详细信息

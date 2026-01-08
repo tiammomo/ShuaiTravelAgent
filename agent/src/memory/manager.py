@@ -40,10 +40,13 @@
 """
 
 import json
+import logging
 import time
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 from collections import deque
+
+logger = logging.getLogger(__name__)
 
 
 class Message:
@@ -489,7 +492,7 @@ class MemoryManager:
 
             return True
         except Exception as e:
-            print(f"加载记忆失败: {e}")
+            logger.error(f"加载记忆失败: {e}")
             return False
 
     def get_context_summary(self) -> str:

@@ -353,7 +353,55 @@ async def generate_chat_stream(message: str, session_id: str, request: Request =
             yield f"data: {json.dumps({'type': SSEEventType.DONE})}\n\n"
 
 
-@router.post("/chat/stream")
+@router.post(
+    "/chat/stream",
+    responses={
+        200: {
+            "description": "SSE流式响应",
+            "content": {
+                "text/event-stream": {
+                    "example": (
+                        "data: {\"type\": \"session_id\", \"session_id\": \"550e8400-e29b-41d4-a716-446655440000\"}\n\n"
+                        "data: {\"type\": \"reasoning_start\"}\n\n"
+                        "data: {\"type\": \"reasoning_chunk\", \"content\": \"分析用户需求：用户想要了解北京三日游的安排\"}\n\n"
+                        "data: {\"type\": \"reasoning_end\"}\n\n"
+                        "data: {\"type\": \"answer_start\"}\n\n"
+                        "data: {\"type\": \"chunk\", \"content\": \"北京\"}\n\n"
+                        "data: {\"type\": \"chunk\", \"content\": \"是\"}\n\n"
+                        "data: {\"type\": \"chunk\", \"content\": \"一个\"}\n\n"
+                        "data: {\"type\": \"chunk\", \"content\": \"非常\"}\n\n"
+                        "data: {\"type\": \"chunk\", \"content\": \"适合\"}\n\n"
+                        "data: {\"type\": \"done\", \"stats\": {\"tokens\": 482, \"duration\": 17.087}}\n\n"
+                    )
+                }
+            }
+        },
+        400: {
+            "description": "请求错误",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "消息内容不能为空"}
+                }
+            }
+        },
+        500: {
+            "description": "服务器内部错误",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Agent服务不可用，请稍后重试"}
+                }
+            }
+        },
+        503: {
+            "description": "服务不可用",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "gRPC连接失败，请确保Agent服务已启动"}
+                }
+            }
+        }
+    }
+)
 async def stream_chat(request: ChatRequest, fastapi_request: Request):
     """
     SSE流式聊天API端点

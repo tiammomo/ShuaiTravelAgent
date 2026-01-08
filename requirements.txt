@@ -1,4 +1,15 @@
+# Web 框架
 fastapi==0.104.1
 uvicorn==0.24.0
 pydantic==2.5.0
 streamlit==1.29.0
+
+# gRPC
+grpcio==1.59.0
+grpcio-tools==1.59.0
+protobuf==4.25.0
+
+# 工具库
+PyYAML==6.0.1
+python-dotenv==1.0.0
+httpx==0.25.0

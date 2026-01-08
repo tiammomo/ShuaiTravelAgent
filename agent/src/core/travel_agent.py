@@ -47,6 +47,9 @@ if AGENT_SRC_DIR not in sys.path:
 
 # 使用绝对导入替代相对导入，提高代码可读性和可维护性
 from core.react_agent import ReActAgent, ToolInfo, Action, Thought, AgentState, ActionStatus
+from core.style_config import style_manager, ReplyStyle, StyleConfig
+from core.intent_recognizer import intent_recognizer, IntentRecognizer, IntentResult, IntentType, SentimentType
+from core.decision_engine import decision_engine, DecisionEngine, Decision, DecisionType, ContextInfo
 from config.config_manager import ConfigManager
 from memory.manager import MemoryManager
 from llm.client import LLMClient
@@ -1100,14 +1103,15 @@ class ReActTravelAgent:
 
         return '\n'.join(lines) if lines else "未找到相关景点信息"
 
-    def _generate_answer(self, history: List[Dict]) -> str:
+    def _generate_answer(self, history: List[Dict], intent: IntentResult = None) -> str:
         """
         使用 LLM 生成最终回答
 
-        根据工具执行结果，让 LLM 生成结构化、活泼的回答。
+        根据工具执行结果和用户意图，生成结构化、风格化的回答。
 
         Args:
             history: 执行历史列表
+            intent: 意图识别结果（可选）
 
         Returns:
             str: 生成的回答文本
@@ -1122,41 +1126,18 @@ class ReActTravelAgent:
                         'result': action.get('result', {})
                     })
 
-            system_prompt = """你是一个超级热情、活泼的AI旅游小伙伴！
+            # 获取风格配置
+            if intent:
+                sentiment = SentimentType(intent.sentiment.value) if intent.sentiment else SentimentType.NEUTRAL
+                style = style_manager.get_style_for_task(intent.intent.value, sentiment)
+            else:
+                style = style_manager.get_style_for_task("general_chat", SentimentType.NEUTRAL)
 
-【任务】
-根据工具查询结果，生成结构化的旅游推荐信息。
+            # 根据风格调整温度
+            temperature = style.temperature
 
-【说话风格】
-- 使用轻松活泼的语气，多用口语化表达
-- 适当使用emoji表情符号增添趣味
-- 用"小伙伴"、"亲"、"哇塞"等亲切称呼
-- 适当加入旅行的氛围感描写
-- 重点信息用**加粗**标记
-
-【输出格式】
-必须输出JSON格式，不要包含任何Markdown格式！JSON结构如下：
-{
-    "opening": "开场白，使用轻松活泼的语气",
-    "cities": [
-        {
-            "name": "城市名",
-            "emoji": "城市emoji",
-            "days": "推荐天数",
-            "budget": "预算描述",
-            "season": "最佳旅行季节",
-            "attractions": [
-                {"name": "景点名", "type": "景点类型", "ticket": "门票价格", "description": "简短描述"}
-            ]
-        }
-    ],
-    "tips": "旅行小贴士"
-}
-
-【重要】
-- 只输出JSON，不要输出任何Markdown语法
-- 确保JSON格式正确，可以被json.loads()解析
-- 每个城市至少推荐2-4个景点"""
+            # 构建风格化的系统提示词
+            system_prompt = self._build_style_prompt(style, intent)
 
             user_prompt = f"""我想要规划一次旅行，这是我的查询结果：
 {json.dumps(tool_results, ensure_ascii=False, indent=2)}
@@ -1166,7 +1147,7 @@ class ReActTravelAgent:
             result = self.llm_client.chat([
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
-            ], temperature=0.7)
+            ], temperature=temperature)
 
             if result.get('success'):
                 content = result.get('content', '')
@@ -1179,6 +1160,76 @@ class ReActTravelAgent:
 
         except Exception as e:
             return f'生成回答失败：{str(e)}'
+
+    def _build_style_prompt(self, style: StyleConfig, intent: IntentResult = None) -> str:
+        """
+        根据风格配置构建系统提示词
+
+        Args:
+            style: 风格配置
+            intent: 意图识别结果
+
+        Returns:
+            str: 系统提示词
+        """
+        # 根据风格选择问候语和角色设定
+        role_greetings = {
+            "热情活泼": "你是一个超级热情、活泼的AI旅游小伙伴！",
+            "温暖亲切": "你是一个贴心、温暖的AI旅游助手！",
+            "专业正式": "你是一位专业、可靠的AI旅游顾问。",
+            "俏皮可爱": "你是一个可爱又热情的旅行小达人！",
+            "简洁明了": "你是一个简洁高效的AI旅游助手。"
+        }
+
+        role = role_greetings.get(style.name, "你是一个AI旅游助手")
+
+        # 根据风格选择语气关键词
+        tone_keywords = {
+            "热情活泼": "使用轻松活泼的语气，多用口语化表达。适当使用emoji表情符号增添趣味。用'小伙伴'、'亲'、'哇塞'等亲切称呼。",
+            "温暖亲切": "使用温柔亲切的语气，像朋友一样聊天。适当表达关心和理解。让对话氛围轻松愉快。",
+            "专业正式": "使用专业、清晰的语言。提供准确、有用的信息。保持礼貌和专业的态度。",
+            "俏皮可爱": "使用俏皮可爱的语气，可以适当用一些有趣的网络用语。多多使用可爱的emoji。",
+            "简洁明了": "使用简洁、直接的语言。不说废话，直奔主题。高效传递信息。"
+        }
+
+        tone = tone_keywords.get(style.name, "使用友好的语气")
+
+        # 构建提示词
+        prompt = f"""{role}
+
+【任务】
+根据工具查询结果，生成结构化的旅游推荐信息。
+
+【说话风格】
+- {tone}
+- 适当加入旅行的氛围感描写
+- 重点信息用**加粗**标记
+
+【输出格式】
+必须输出JSON格式，不要包含任何Markdown格式！JSON结构如下：
+{{
+    "opening": "开场白，使用轻松活泼的语气",
+    "cities": [
+        {{
+            "name": "城市名",
+            "emoji": "城市emoji",
+            "days": "推荐天数",
+            "budget": "预算描述",
+            "season": "最佳旅行季节",
+            "attractions": [
+                {{"name": "景点名", "type": "景点类型", "ticket": "门票价格", "description": "简短描述"}}
+            ]
+        }}
+    ],
+    "tips": "旅行小贴士"
+}}
+
+【重要】
+- 只输出JSON，不要输出任何Markdown语法
+- 确保JSON格式正确，可以被json.loads()解析
+- 每个城市至少推荐2-4个景点"""
+
+        return prompt
 
     def _parse_json_response(self, content: str) -> dict:
         """

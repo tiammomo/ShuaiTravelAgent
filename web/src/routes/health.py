@@ -59,7 +59,46 @@ class HealthResponse(BaseModel):
     services: dict
 
 
-@router.get("/health", response_model=HealthResponse)
+@router.get(
+    "/health",
+    response_model=HealthResponse,
+    responses={
+        200: {
+            "description": "服务健康",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "status": "healthy",
+                        "version": "1.0.0",
+                        "agent": "connected",
+                        "services": {
+                            "api": "healthy",
+                            "database": "healthy",
+                            "agent": "healthy"
+                        }
+                    }
+                }
+            }
+        },
+        503: {
+            "description": "服务不健康",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "status": "unhealthy",
+                        "version": "1.0.0",
+                        "agent": "disconnected",
+                        "services": {
+                            "api": "healthy",
+                            "database": "healthy",
+                            "agent": "unhealthy"
+                        }
+                    }
+                }
+            }
+        }
+    }
+)
 async def health_check():
     """
     详细健康检查端点
@@ -90,7 +129,13 @@ async def health_check():
     )
 
 
-@router.get("/ready")
+@router.get(
+    "/ready",
+    responses={
+        200: {"description": "服务已就绪", "content": {"application/json": {"example": {"status": "ready"}}}},
+        503: {"description": "服务未就绪", "content": {"application/json": {"example": {"status": "not ready"}}}}
+    }
+)
 async def readiness_check():
     """
     就绪检查端点
@@ -109,7 +154,13 @@ async def readiness_check():
     return {"status": "ready"}
 
 
-@router.get("/live")
+@router.get(
+    "/live",
+    responses={
+        200: {"description": "服务存活", "content": {"application/json": {"example": {"status": "alive"}}}},
+        503: {"description": "服务不存活", "content": {"application/json": {"example": {"status": "dead"}}}}
+    }
+)
 async def liveness_check():
     """
     存活检查端点

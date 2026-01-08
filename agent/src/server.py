@@ -54,14 +54,10 @@ import io
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stderr)
-    ]
-)
-logger = logging.getLogger(__name__)
+# 使用统一的日志配置
+from config.logging_config import setup_logging, get_logger
+setup_logging(level="INFO", log_dir="logs", env="dev")
+logger = get_logger(__name__)
 
 
 class AsyncThoughtStreamer:
@@ -564,12 +560,11 @@ if __name__ == '__main__':
 
     config_path = args.config
 
-    print(f"[*] Starting Agent gRPC Server...")
-    print(f"    Config: {config_path}")
-    print(f"    Port: {args.port}")
-    print()
+    logger.info("Starting Agent gRPC Server...")
+    logger.info(f"Config: {config_path}")
+    logger.info(f"Port: {args.port}")
 
     server = serve(config_path, args.port)
-    print(f"[OK] Agent gRPC Server started on port {args.port}")
-    print("    Press Ctrl+C to stop")
+    logger.info(f"Agent gRPC Server started on port {args.port}")
+    logger.info("Press Ctrl+C to stop")
     server.wait_for_termination()

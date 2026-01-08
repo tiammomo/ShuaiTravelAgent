@@ -12,6 +12,9 @@
 - **多协议 LLM 支持** - OpenAI、Claude、Gemini、Ollama 等
 - **多会话管理** - 独立对话历史，会话隔离
 - **模块化架构** - Agent/Web/Frontend 三层分离
+- **动态风格系统** - 5 种回复风格（热情活泼/温暖亲切/专业正式/俏皮可爱/简洁明了）
+- **LLM 意图识别** - 17+ 种细粒度意图类型，智能实体提取
+- **语义工具匹配** - 混合匹配策略，自动学习用户偏好
 
 ### 技术栈
 
@@ -75,10 +78,14 @@ ShuaiTravelAgent/
 │   ├── src/
 │   │   ├── core/               # ReAct 引擎核心
 │   │   │   ├── react_agent.py  # ReAct Agent 实现
-│   │   │   └── travel_agent.py # 旅游助手 Agent
+│   │   │   ├── travel_agent.py # 旅游助手 Agent
+│   │   │   ├── style_config.py      # 动态风格配置
+│   │   │   ├── intent_recognizer.py # LLM 意图识别
+│   │   │   └── decision_engine.py   # 上下文决策引擎
 │   │   ├── llm/                # 多协议 LLM 客户端
 │   │   │   └── client.py       # LLM 客户端工厂
 │   │   ├── tools/              # 工具模块
+│   │   │   └── semantic_matcher.py  # 语义工具匹配
 │   │   ├── environment/        # 环境数据
 │   │   └── server.py           # gRPC 服务器
 │   └── proto/
@@ -183,8 +190,12 @@ vim config/llm_config.yaml
 
 ### 访问应用
 
-- 前端：**http://localhost:3000**
-- API 文档：**http://localhost:8000/docs**
+| 服务 | 地址 | 说明 |
+|------|------|------|
+| 前端 | http://localhost:3000 | Next.js 16 主应用 |
+| Swagger API 文档 | http://localhost:8000/docs | Swagger UI (OpenAPI) |
+| RapiDoc API 文档 | http://localhost:8000/rapidoc | RapiDoc (美观 UI) |
+| ReDoc API 文档 | http://localhost:8000/redoc | ReDoc (文档风格) |
 
 ---
 
@@ -588,6 +599,25 @@ pytest tests/ --html=report.html
 ---
 
 ## 更新日志
+
+### v3.1.0
+
+- **动态风格系统** - 5 种回复风格可切换
+  - 热情活泼、温暖亲切、专业正式、俏皮可爱、简洁明了
+  - 根据用户情感自适应调整语气
+  - 智能 Emoji 匹配和插入
+- **LLM 意图识别** - 更智能的任务理解
+  - 支持 17+ 种细粒度意图类型
+  - 自动提取城市、预算、天数、季节等实体
+  - 用户情感分析（兴奋/急迫/犹豫等）
+- **语义工具匹配** - 精准的工具选择
+  - 混合匹配策略（直接映射 + 关键词 + 语义）
+  - 自动学习用户工具使用偏好
+  - 智能补全缺失信息
+- **上下文决策引擎** - 智能多轮对话
+  - 上下文感知的决策生成
+  - 自动识别需要补充的信息
+  - 流畅的对话体验
 
 ### v3.0.0
 

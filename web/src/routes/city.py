@@ -84,7 +84,13 @@ CITIES = [
 ]
 
 
-@router.get("/cities")
+@router.get(
+    "/cities",
+    responses={
+        200: {"description": "获取成功", "content": {"application/json": {"example": {"cities": [{"id": "beijing", "name": "北京", "region": "华北", "tags": ["历史文化", "首都"]}]}}}},
+        400: {"description": "请求参数错误", "content": {"application/json": {"example": {"detail": "无效的地区名称"}}}}
+    }
+)
 async def list_cities(region: str = None, tags: str = None):
     """
     列出所有城市
@@ -112,7 +118,29 @@ async def list_cities(region: str = None, tags: str = None):
     return {"cities": result}
 
 
-@router.get("/cities/{city_id}")
+@router.get(
+    "/cities/{city_id}",
+    responses={
+        200: {
+            "description": "获取成功",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "id": "beijing",
+                        "name": "北京",
+                        "region": "华北",
+                        "tags": ["历史文化", "首都", "古建筑"],
+                        "description": "北京是华北的热门旅游城市，以历史文化著称。",
+                        "attractions": [{"name": "故宫", "type": "景点", "duration": "3小时", "ticket": 60}],
+                        "avg_budget_per_day": 400,
+                        "best_seasons": ["春季", "秋季"]
+                    }
+                }
+            }
+        },
+        404: {"description": "城市不存在", "content": {"application/json": {"example": {"error": "City not found"}}}}
+    }
+)
 async def get_city(city_id: str):
     """
     获取城市详细信息
@@ -145,7 +173,16 @@ async def get_city(city_id: str):
     return city_details
 
 
-@router.get("/cities/{city_id}/attractions")
+@router.get(
+    "/cities/{city_id}/attractions",
+    responses={
+        200: {
+            "description": "获取成功",
+            "content": {"application/json": {"example": {"city": "北京", "attractions": [{"name": "故宫", "type": "景点", "duration": "3小时", "ticket": 60}, {"name": "长城", "type": "景点", "duration": "5小时", "ticket": 40}]}}}
+        },
+        404: {"description": "城市不存在", "content": {"application/json": {"example": {"error": "City not found"}}}}
+    }
+)
 async def get_city_attractions(city_id: str):
     """
     获取城市景点列表
@@ -172,7 +209,12 @@ async def get_city_attractions(city_id: str):
     }
 
 
-@router.get("/regions")
+@router.get(
+    "/regions",
+    responses={
+        200: {"description": "获取成功", "content": {"application/json": {"example": {"regions": ["华北", "华东", "西南", "西北", "华南"]}}}}
+    }
+)
 async def list_regions():
     """
     列出所有地区
@@ -184,7 +226,12 @@ async def list_regions():
     return {"regions": regions}
 
 
-@router.get("/tags")
+@router.get(
+    "/tags",
+    responses={
+        200: {"description": "获取成功", "content": {"application/json": {"example": {"tags": ["历史文化", "现代都市", "自然风光", "美食", "海滨"]}}}}
+    }
+)
 async def list_tags():
     """
     列出所有标签

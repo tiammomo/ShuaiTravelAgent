@@ -36,8 +36,11 @@
 
 import json
 import time
+import logging
 from abc import ABC, abstractmethod  # 抽象基类用于定义接口协议
 from typing import Dict, Any, List, Optional, Iterator
+
+logger = logging.getLogger(__name__)
 import urllib.request
 import urllib.error
 from enum import Enum
@@ -157,21 +160,21 @@ class LLMProtocolAdapter(ABC):
 
             except urllib.error.HTTPError as e:
                 error_msg = e.read().decode('utf-8')
-                print(f"HTTP错误 (尝试 {attempt + 1}/{self.max_retries}): {e.code} - {error_msg}")
+                logger.warning(f"HTTP error (attempt {attempt + 1}/{self.max_retries}): {e.code}")
                 if attempt < self.max_retries - 1:
                     time.sleep(2 ** attempt)
                 else:
                     return {"success": False, "error": f"HTTP {e.code}: {error_msg}"}
 
             except urllib.error.URLError as e:
-                print(f"网络错误 (尝试 {attempt + 1}/{self.max_retries}): {str(e.reason)}")
+                logger.warning(f"Network error (attempt {attempt + 1}/{self.max_retries}): {str(e.reason)}")
                 if attempt < self.max_retries - 1:
                     time.sleep(2 ** attempt)
                 else:
                     return {"success": False, "error": f"网络错误: {str(e.reason)}"}
 
             except Exception as e:
-                print(f"未知错误 (尝试 {attempt + 1}/{self.max_retries}): {str(e)}")
+                logger.warning(f"Unknown error (attempt {attempt + 1}/{self.max_retries}): {str(e)}")
                 if attempt < self.max_retries - 1:
                     time.sleep(2 ** attempt)
                 else:
