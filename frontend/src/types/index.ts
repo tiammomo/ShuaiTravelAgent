@@ -18,9 +18,13 @@ export interface AppConfig {
   apiBase: string;
 }
 
+// 对话模式类型
+export type ChatMode = 'direct' | 'react' | 'plan';
+
 export interface ChatRequest {
   message: string;
   session_id: string;
+  mode?: ChatMode;  // 对话模式（可选）
 }
 
 export interface ChatResponse {

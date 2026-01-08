@@ -6,6 +6,7 @@ import { SendOutlined, StopOutlined, RobotOutlined } from '@ant-design/icons';
 import { useAppContext } from '@/context/AppContext';
 import { apiService } from '@/services/api';
 import MessageList from './MessageList';
+import ChatModeSelector from './ChatModeSelector';
 
 const { TextArea } = Input;
 
@@ -45,6 +46,8 @@ const ChatArea: React.FC = () => {
     stopStreaming,
     setStopStreaming,
     refreshSessions,
+    chatMode,
+    setChatMode,
   } = useAppContext();
 
   const [inputValue, setInputValue] = useState('');
@@ -153,6 +156,7 @@ const ChatArea: React.FC = () => {
       {
         message: userMessage.content,
         session_id: sessionId,
+        mode: chatMode,
       },
       {
         onChunk: (content) => {
@@ -332,6 +336,20 @@ const ChatArea: React.FC = () => {
             </div>
           </div>
         )}
+
+        {/* 模式选择器 */}
+        <div style={{ marginBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <ChatModeSelector
+            value={chatMode}
+            onChange={setChatMode}
+            disabled={isStreaming}
+          />
+          <div style={{ fontSize: '12px', color: '#999' }}>
+            {chatMode === 'direct' && '快速响应，简单对话'}
+            {chatMode === 'react' && '深度思考，工具调用'}
+            {chatMode === 'plan' && '先规划，后执行'}
+          </div>
+        </div>
 
         <Space.Compact style={{ width: '100%' }}>
           <TextArea

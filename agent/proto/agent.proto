@@ -91,6 +91,11 @@ message MessageRequest {
     // true: 使用 StreamMessage 获取流式响应
     // false: 使用 ProcessMessage 获取完整响应
     bool stream = 4;
+
+    // 对话模式
+    // 可选，如果不提供使用默认模式（react）
+    // 可选值: "direct" - 直接调用LLM, "react" - ReAct推理模式, "plan" - 规划后执行模式
+    string mode = 5;
 }
 
 // 消息响应

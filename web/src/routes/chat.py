@@ -176,9 +176,11 @@ class ChatRequest(BaseModel):
     属性:
         message: str 用户输入的消息内容，必填
         session_id: Optional[str] 会话ID，可选，如果未提供则自动创建
+        mode: Optional[str] 对话模式，可选值: direct/react/plan，默认react
     """
     message: str
     session_id: Optional[str] = None
+    mode: Optional[str] = "react"
 
 
 def get_chat_service() -> ChatService:
@@ -203,7 +205,7 @@ def get_session_service():
     return container.resolve('SessionService')
 
 
-async def generate_chat_stream(message: str, session_id: str, request: Request = None) -> AsyncGenerator[str, None]:
+async def generate_chat_stream(message: str, session_id: str, mode: str = "react", request: Request = None) -> AsyncGenerator[str, None]:
     """
     生成聊天流式响应
 
@@ -222,6 +224,7 @@ async def generate_chat_stream(message: str, session_id: str, request: Request =
     Args:
         message: str 用户输入的消息
         session_id: str 会话ID
+        mode: str 对话模式 (direct/react/plan)
         request: Request FastAPI请求对象，用于检测客户端断开
 
     Yields:
@@ -262,7 +265,8 @@ async def generate_chat_stream(message: str, session_id: str, request: Request =
             session_id=session_id,
             user_input=message,
             model_id='',
-            stream=True
+            stream=True,
+            mode=mode
         )
 
         # 使用asyncio.to_thread在线程池中执行同步gRPC流（可选优化）
@@ -457,7 +461,7 @@ async def stream_chat(request: ChatRequest, fastapi_request: Request):
 
     # 返回SSE流式响应
     return StreamingResponse(
-        generate_chat_stream(request.message, request.session_id or "", fastapi_request),
+        generate_chat_stream(request.message, request.session_id or "", request.mode, fastapi_request),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

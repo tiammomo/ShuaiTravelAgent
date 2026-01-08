@@ -310,6 +310,8 @@ class AgentServicer:
 
         try:
             user_input = request.user_input
+            mode = request.mode if hasattr(request, 'mode') and request.mode else "react"
+            logger.info(f"[Stream-{request_id}] 使用模式: {mode}")
 
             # 发送思考开始信号
             yield agent_pb2.StreamChunk(chunk_type="thinking_start", content="", is_last=False)
@@ -345,10 +347,12 @@ class AgentServicer:
                     loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(loop)
                     loop.run_until_complete(
-                        self.agent.process_stream(
+                        self.agent.process_with_mode(
                             user_input,
+                            mode=self.agent.ChatMode(mode) if hasattr(self.agent, 'ChatMode') else mode,
                             answer_callback=on_answer_chunk,
-                            done_callback=on_done
+                            done_callback=on_done,
+                            thinking_callback=on_think
                         )
                     )
                     loop.close()

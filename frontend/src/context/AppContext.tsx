@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { Message, AppConfig, ModelInfo, SessionInfo } from '@/types';
+import { Message, AppConfig, ModelInfo, SessionInfo, ChatMode } from '@/types';
 import { apiService } from '@/services/api';
 
 interface AppState {
@@ -14,6 +14,10 @@ interface AppState {
   currentModelId: string | null;
   setCurrentModelId: (modelId: string) => void;
   loadingModels: boolean;
+
+  // 对话模式
+  chatMode: ChatMode;
+  setChatMode: (mode: ChatMode) => void;
 
   // 会话
   currentSessionId: string | null;
@@ -54,6 +58,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [isStreaming, setIsStreaming] = useState(false);
   const [stopStreaming, setStopStreaming] = useState(false);
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
+
+  // 对话模式状态
+  const [chatMode, setChatModeState] = useState<ChatMode>('react');
 
   // 加载会话列表
   const loadSessions = async () => {
@@ -201,6 +208,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
+  const handleSetChatMode = (mode: ChatMode) => {
+    setChatModeState(mode);
+  };
+
   const value: AppState = {
     config,
     setConfig,
@@ -208,6 +219,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     currentModelId,
     setCurrentModelId: handleSetCurrentModelId,
     loadingModels,
+    chatMode,
+    setChatMode: handleSetChatMode,
     currentSessionId,
     setCurrentSessionId,
     switchSession,

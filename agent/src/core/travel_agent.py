@@ -53,6 +53,14 @@ from core.decision_engine import decision_engine, DecisionEngine, Decision, Deci
 from config.config_manager import ConfigManager
 from memory.manager import MemoryManager
 from llm.client import LLMClient
+from enum import Enum
+
+
+class ChatMode(Enum):
+    """对话模式枚举"""
+    DIRECT = "direct"       # 直接调用 LLM
+    REACT = "react"         # ReAct 推理模式
+    PLAN = "plan"           # 规划后执行模式
 
 
 def create_travel_tools(config_manager: ConfigManager) -> List[tuple]:
@@ -1348,3 +1356,388 @@ class ReActTravelAgent:
         """
         self.memory_manager.clear_conversation()
         self.react_agent.reset()
+
+    # ==========================================================================
+    # 多模式对话处理
+    # ==========================================================================
+
+    async def process_with_mode(
+        self,
+        user_input: str,
+        mode: ChatMode = ChatMode.REACT,
+        answer_callback=None,
+        done_callback=None,
+        thinking_callback=None
+    ) -> Dict[str, Any]:
+        """
+        根据指定模式处理用户输入
+
+        支持三种对话模式：
+        1. Direct Mode: 直接调用 LLM，快速响应简单问题
+        2. ReAct Mode: 推理与行动交替，适合需要工具调用的场景
+        3. Plan Mode: 先规划后执行，适合复杂任务
+
+        Args:
+            user_input: 用户输入
+            mode: 对话模式
+            answer_callback: 答案回调
+            done_callback: 完成回调
+            thinking_callback: 思考回调
+
+        Returns:
+            Dict: 处理结果
+        """
+        import logging
+        import time as time_module
+        logger = logging.getLogger(__name__)
+
+        logger.info(f"[Agent] 开始处理 (mode={mode.value}): {user_input[:50]}...")
+        start_time = time_module.time()
+
+        # 添加用户输入到历史
+        self.memory_manager.add_message('user', user_input)
+
+        context = {
+            'user_query': user_input,
+            'user_preference': self.memory_manager.get_user_preference()
+        }
+
+        # 根据模式处理
+        if mode == ChatMode.DIRECT:
+            result = await self._process_direct_mode(user_input, answer_callback, thinking_callback)
+        elif mode == ChatMode.PLAN:
+            result = await self._process_plan_mode(user_input, context, answer_callback, thinking_callback)
+        else:
+            # 默认使用 ReAct 模式
+            result = await self._process_react_mode(user_input, context, answer_callback, done_callback, thinking_callback)
+
+        elapsed = time_module.time() - start_time
+        logger.info(f"[Agent] 处理完成 (mode={mode.value}), 耗时: {elapsed:.2f}秒")
+
+        return result
+
+    async def _process_direct_mode(
+        self,
+        user_input: str,
+        answer_callback=None,
+        thinking_callback=None
+    ) -> Dict[str, Any]:
+        """
+        直接调用 LLM 模式
+
+        特点：
+        - 快速响应，无工具调用
+        - 适合简单对话和一般问题
+        - 不展示思考过程
+        """
+        import logging
+        import asyncio
+        logger = logging.getLogger(__name__)
+
+        # 发送思考开始
+        if thinking_callback:
+            thinking_callback("【直接模式】直接生成回答...\n\n", 0.0)
+
+        # 构建消息
+        messages = [
+            {"role": "system", "content": "你是一个专业的旅游助手。"},
+            {"role": "user", "content": user_input}
+        ]
+
+        # 流式生成回答
+        if hasattr(self.llm_client, 'chat_stream') and answer_callback:
+            accumulated_answer = ""
+            token_count = 0
+
+            for token in self.llm_client.chat_stream(messages, temperature=0.7):
+                token_count += 1
+                accumulated_answer += token
+                answer_callback(token)
+                await asyncio.sleep(0.01)
+
+            answer = accumulated_answer
+            logger.info(f"[Agent] 直接模式完成, {token_count} tokens")
+        else:
+            # 非流式
+            result = self.llm_client.chat(messages, temperature=0.7)
+            answer = result.get('content', '抱歉，我没有理解您的意思。')
+
+        # 添加助手回答到历史
+        self.memory_manager.add_message('assistant', answer)
+
+        return {
+            "success": True,
+            "answer": answer,
+            "mode": "direct",
+            "reasoning": {
+                "text": "<thinking>\n[Direct Mode]\n直接调用 LLM 生成回答\n</thinking>",
+                "total_steps": 0,
+                "tools_used": []
+            },
+            "history": []
+        }
+
+    async def _process_plan_mode(
+        self,
+        user_input: str,
+        context: Dict,
+        answer_callback=None,
+        thinking_callback=None
+    ) -> Dict[str, Any]:
+        """
+        规划后执行模式
+
+        特点：
+        1. 先使用 LLM 生成完整的执行计划
+        2. 再逐步执行计划中的步骤
+        3. 最后生成最终回答
+
+        适合复杂任务，如多日行程规划
+        """
+        import logging
+        import asyncio
+        import json as json_util
+        logger = logging.getLogger(__name__)
+
+        step_times = []
+
+        # Step 1: 生成执行计划
+        if thinking_callback:
+            thinking_callback("【规划模式】正在生成执行计划...\n\n", 0.0)
+
+        plan_start = asyncio.get_event_loop()
+        plan_prompt = f"""用户请求: {user_input}
+
+请制定一个详细的执行计划，以 JSON 格式返回：
+{{
+    "steps": [
+        {{
+            "step": 1,
+            "action": "工具名称",
+            "params": {{"参数": "值"}},
+            "description": "步骤描述"
+        }}
+    ],
+    "estimated_time": "预计总时间"
+}}"
+
+只返回 JSON，不要其他内容。"""
+
+        plan_result = self.llm_client.chat([
+            {"role": "system", "content": "你是一个专业的旅游规划助手。"},
+            {"role": "user", "content": plan_prompt}
+        ], temperature=0.3)
+
+        if not plan_result.get('success'):
+            return {
+                "success": False,
+                "error": "规划生成失败",
+                "mode": "plan"
+            }
+
+        plan_content = plan_result.get('content', '{}')
+        try:
+            # 尝试解析 JSON 计划
+            plan_data = json_util.loads(plan_content)
+        except json_util.JSONDecodeError:
+            # 如果解析失败，尝试提取 JSON
+            plan_data = self._extract_json_from_plan(plan_content)
+
+        steps = plan_data.get('steps', [])
+        step_elapsed = (asyncio.get_event_loop().time() - plan_start.time()) if hasattr(plan_start, 'time') else 0
+        step_times.append(("规划", step_elapsed))
+
+        if thinking_callback:
+            thinking_callback(f"【规划模式】计划生成完成，共 {len(steps)} 个步骤\n\n", step_elapsed)
+
+        # Step 2: 执行计划
+        history = []
+        reasoning_text = "[规划模式执行]\n\n"
+
+        for i, step in enumerate(steps):
+            step_num = i + 1
+            action_name = step.get('action', '')
+            params = step.get('params', {})
+            description = step.get('description', '')
+
+            step_start = asyncio.get_event_loop()
+
+            if thinking_callback:
+                thinking_callback(f"【规划模式】执行步骤 {step_num}/{len(steps)}: {description}\n\n", 0.0)
+
+            reasoning_text += f"步骤 {step_num}: {description}\n"
+
+            # 查找并执行工具
+            result = {'success': False}
+            if action_name and action_name != 'none':
+                tool = self.react_agent.tool_registry.get_tool(action_name)
+                if tool:
+                    try:
+                        result = await tool.execute(**params) if hasattr(tool, 'execute') else tool(params)
+                        reasoning_text += f"  - 执行: {action_name}\n"
+                        reasoning_text += f"  - 结果: {str(result)[:100]}...\n"
+                    except Exception as e:
+                        reasoning_text += f"  - 错误: {str(e)}\n"
+                        result = {'success': False, 'error': str(e)}
+
+            step_elapsed = (asyncio.get_event_loop().time() - step_start.time()) if hasattr(step_start, 'time') else 0
+            step_times.append((action_name, step_elapsed))
+
+            history.append({
+                'step': step_num,
+                'action': action_name,
+                'params': params,
+                'result': result,
+                'description': description
+            })
+
+        # Step 3: 生成最终回答
+        if thinking_callback:
+            thinking_callback("【规划模式】正在生成最终回答...\n\n", 0.0)
+
+        # 收集工具执行结果
+        tool_results = [h.get('result', {}) for h in history if h.get('result', {}).get('success')]
+
+        if tool_results:
+            answer = self._generate_answer_from_results(user_input, tool_results)
+        else:
+            # 直接使用 LLM 生成回答
+            final_prompt = f"""用户请求: {user_input}
+
+执行计划已完成。请根据以下信息生成最终回答：
+{json_util.dumps(history, ensure_ascii=False, indent=2)}
+
+请提供详细、结构化的回答。"""
+            final_result = self.llm_client.chat([
+                {"role": "system", "content": "你是一个专业的旅游助手。"},
+                {"role": "user", "content": final_prompt}
+            ], temperature=0.7)
+            answer = final_result.get('content', '抱歉，处理过程中出现问题。')
+
+        self.memory_manager.add_message('assistant', answer)
+
+        # 构建推理文本
+        reasoning_text += "\n执行完成。"
+        full_reasoning = f"""<thinking>
+[规划模式]
+{reasoning_text}
+
+[步骤耗时]
+{chr(10).join([f"- {name}: {t:.2f}秒" for name, t in step_times])}
+</thinking>"""
+
+        return {
+            "success": True,
+            "answer": answer,
+            "mode": "plan",
+            "reasoning": {
+                "text": full_reasoning,
+                "total_steps": len(steps),
+                "tools_used": [h.get('action') for h in history if h.get('action')]
+            },
+            "history": history,
+            "plan": steps
+        }
+
+    def _extract_json_from_plan(self, content: str) -> Dict:
+        """从计划文本中提取 JSON"""
+        import re
+        json_match = re.search(r'\{[^{}]*\}', content)
+        if json_match:
+            try:
+                return json_util.loads(json_match.group())
+            except json_util.JSONDecodeError:
+                pass
+        return {}
+
+    def _generate_answer_from_results(self, user_input: str, results: List[Dict]) -> str:
+        """根据工具执行结果生成回答"""
+        import json
+        prompt = f"""用户请求: {user_input}
+
+工具执行结果:
+{json.dumps(results, ensure_ascii=False, indent=2)}
+
+请根据以上结果，生成一个结构清晰、内容丰富的旅游回答。"""
+        result = self.llm_client.chat([
+            {"role": "system", "content": "你是一个专业的旅游助手。"},
+            {"role": "user", "content": prompt}
+        ], temperature=0.7)
+        return result.get('content', '处理完成')
+
+    async def _process_react_mode(
+        self,
+        user_input: str,
+        context: Dict,
+        answer_callback=None,
+        done_callback=None,
+        thinking_callback=None
+    ) -> Dict[str, Any]:
+        """
+        ReAct 推理模式
+
+        特点：
+        - 思考 → 行动 → 观察 → 评估循环
+        - 支持动态工具调用
+        - 展示完整的推理过程
+        """
+        import logging
+        import asyncio
+        import time as time_module
+        logger = logging.getLogger(__name__)
+
+        # 设置思考流式回调
+        if hasattr(self.react_agent, 'set_think_stream_callback') and thinking_callback:
+            self.react_agent.set_think_stream_callback(thinking_callback)
+
+        # 执行 ReAct 循环
+        result = await self.react_agent.run(user_input, context)
+        logger.info(f"[Agent] ReAct 执行完成, success={result.get('success')}")
+
+        if result.get('success'):
+            history = result.get('history', [])
+            reasoning_text = self._build_reasoning_text(history)
+            answer = self._extract_answer(history)
+
+            self.memory_manager.add_message('assistant', answer)
+
+            # 构建 LLM 消息生成最终回答
+            system_prompt = "你是一个专业的旅游助手。请根据用户的问题，提供详细、准确的旅游建议和规划。"
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_input}
+            ]
+
+            # 流式生成最终回答
+            if hasattr(self.llm_client, 'chat_stream') and answer_callback:
+                token_count = 0
+                accumulated_answer = ""
+
+                for token in self.llm_client.chat_stream(messages, temperature=0.7):
+                    token_count += 1
+                    accumulated_answer += token
+                    answer_callback(token)
+                    await asyncio.sleep(0.01)
+
+                answer = accumulated_answer
+                logger.info(f"[Agent] ReAct 流式生成完成, {token_count} tokens")
+
+            return {
+                "success": True,
+                "answer": answer,
+                "mode": "react",
+                "reasoning": {
+                    "text": reasoning_text,
+                    "total_steps": len(history),
+                    "tools_used": self._extract_tools_used(history)
+                },
+                "history": history
+            }
+        else:
+            return {
+                "success": False,
+                "error": result.get('error', '处理失败'),
+                "mode": "react",
+                "reasoning": None,
+                "history": result.get('history', [])
+            }
