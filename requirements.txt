@@ -1,15 +1,19 @@
 # Web 框架
-fastapi==0.104.1
-uvicorn==0.24.0
-pydantic==2.5.0
-streamlit==1.29.0
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+pydantic>=2.5.0
+sse-starlette>=2.0.0
 
 # gRPC
-grpcio==1.59.0
-grpcio-tools==1.59.0
-protobuf==4.25.0
+grpcio>=1.59.0
+grpcio-tools>=1.59.0
+protobuf>=4.25.0
 
 # 工具库
-PyYAML==6.0.1
-python-dotenv==1.0.0
-httpx==0.25.0
+PyYAML>=6.0.1
+python-dotenv>=1.0.0
+httpx>=0.25.0
+
+# 测试
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
